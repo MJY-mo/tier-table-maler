@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>画像放り込みティア表メーカー</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&family=Roboto:wght@400;700&family=RocknRoll+One&family=Yuji+Syuku&display=swap" rel="stylesheet">
+    <!-- html2canvasライブラリ: DOMを画像に変換するために使用 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <!-- SortableJSライブラリ: ドラッグ＆ドロップでの並び替えを簡単に実装するために使用 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
+    <style>
+        body {
+            font-family: 'Roboto', 'Noto Sans JP', sans-serif;
+            background-color: #111827; /* ダークグレーの背景 */
+            color: #f3f4f6;
+        }
+        /* SSSランクの虹色背景 */
+        .tier-sss-bg { background: linear-gradient(to right, red, orange, yellow, green, blue, indigo, violet); }
+        /* SSランクの金色背景（金属質感向上版） */
+        .tier-ss-bg { background: linear-gradient(145deg, #b6890f, #fffaa8 50%, #b6890f); }
+        /* Sランクの銀色背景（金属質感向上版） */
+        .tier-s-bg { background: linear-gradient(145deg, #8d8d8d, #ffffff 50%, #8d8d8d); }
+        
+        .tier-label { position: relative; overflow: visible; } /* overflow: visible に変更 */
+        .tier-label-text { text-shadow: 2px 2px 5px rgba(0,0,0,0.8); z-index: 1; position: relative; }
+
+        /* --- テクスチャ用CSS --- */
+        .tier-label-gloss::after {
+            content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 50%;
+            background: linear-gradient(to bottom, rgba(255,255,255,0.4) 0%, rgba(255,255,255,0.1) 50%, rgba(255,255,0,0) 100%);
+        }
+        /* box-shadowからfilter: drop-shadowに変更して描画エラーを回避 */
+        .tier-label-glow { 
+            filter: drop-shadow(0 0 8px currentColor);
+        }
+        .tier-label-cloth {
+            background-image: 
+                linear-gradient(45deg, rgba(0,0,0,0.05) 25%, transparent 25%),
+                linear-gradient(-45deg, rgba(0,0,0,0.05) 25%, transparent 25%),
+                linear-gradient(45deg, transparent 75%, rgba(0,0,0,0.05) 75%),
+                linear-gradient(-45deg, transparent 75%, rgba(0,0,0,0.05) 75%);
+            background-size: 20px 20px;
+        }
+
+        .tile {
+            touch-action: none; position: relative; background-size: cover; background-repeat: no-repeat;
+        }
+        .tile-image-container {
+            width: 100%; height: 100%;
+            background-size: cover;
+            background-repeat: no-repeat;
+        }
+        .tile-delete-btn {
+            position: absolute; top: -8px; right: -8px; width: 24px; height: 24px;
+            background-color: #ef4444; color: white; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 14px; font-weight: bold; cursor: pointer; border: 2px solid white;
+            opacity: 0; transition: opacity 0.2s; z-index: 10;
+        }
+        .tile:hover .tile-delete-btn { opacity: 1; }
+        .sortable-ghost { opacity: 0.4; background-color: #4f46e5; }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #1f2937; }
+        ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #6b7280; }
+    </style>
+</head>
+<body class="flex flex-col h-screen">
+
+    <!-- 上部ヘッダー -->
+    <header class="bg-gray-800 shadow-lg p-2 flex items-center justify-between z-20">
+        <h1 id="app-title" class="text-xl font-bold text-white"></h1>
+        <div class="flex items-center space-x-2">
+            <button id="export-btn" class="text-white font-bold py-2 px-4 rounded-lg transition-colors"></button>
+            <button id="help-btn" class="text-white font-bold py-2 px-4 rounded-lg transition-colors"></button>
+            <span class="text-gray-500">|</span>
+            <button id="save-btn" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg transition-colors"></button>
+            <button id="load-btn" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg transition-colors"></button>
+            <input type="file" id="load-input" class="hidden" accept=".json">
+            <span class="text-gray-500">|</span>
+            <button id="lang-switcher-btn" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg transition-colors"></button>
+        </div>
+    </header>
+
+    <!-- メインコンテンツ -->
+    <div id="main-content-area" class="flex flex-1 overflow-hidden">
+        <!-- 左サイドバー -->
+        <aside id="sidebar" class="w-80 bg-gray-900 p-4 overflow-y-auto flex-shrink-0 transition-all duration-300">
+            <!-- 各種パネルがここに表示される -->
+        </aside>
+
+        <!-- ティア表エリア -->
+        <main id="tier-list-container" class="flex-1 p-4 overflow-auto bg-black">
+            <!-- ティア表のコンテンツラッパーがここに挿入される -->
+        </main>
+    </div>
+    
+    <script>
+        // --- 多言語対応データ ---
+        const translations = {
+            ja: {
+                appTitle: "画像放り込みティア表メーカー",
+                save: "保存", load: "呼出", exportImage: "画像出力", help: "操作方法",
+                settings: "全体設定", export: "画像出力", helpPanel: "操作説明",
+                tierEditor: "の編集", tileEditor: "タイル編集", back: "戻る",
+                displayScale: "表示スケール",
+                tierListBg: "ティア表 背景色", tileSize: "タイルサイズ",
+                tileBorderColor: "タイル枠の色", tileBorderWidth: "タイル枠の太さ",
+                tileCornerRadius: "タイルの角丸", tierDisplaySettings: "ティア表示設定",
+                fileFormat: "ファイル形式", imageScale: "画像スケール（品質）",
+                executeExport: "出力実行",
+                help1: "画像タイル追加:", help1_desc: "PCから画像をティア表のタイルエリアにドラッグ＆ドロップします。",
+                help2: "テキストタイル追加:", help2_desc: "ティア表の何もない場所をダブルクリックするとテキストタイルが生成されます。",
+                help3: "タイル移動:", help3_desc: "タイルをドラッグして、好きなティアや位置に移動できます。",
+                help4: "タイル削除:", help4_desc: "タイルにマウスを乗せると右上に表示される「×」ボタンで削除できます。",
+                help5: "タイル編集:", help5_desc: "タイルをダブルクリックすると、左に編集パネルが表示されます。",
+                help6: "ティア編集:", help6_desc: "ティア名（SSSなど）をクリックすると、編集パネルが表示されます。",
+                help7: "保存:", help7_desc: "現在の状態をプロジェクトファイル(.json)として保存します。",
+                help8: "呼出:", help8_desc: "保存したプロジェクトファイルを読み込み、作業を再開します。",
+                help9: "画像出力:", help9_desc: "作成したティア表を一枚の画像としてダウンロードします。",
+                tierName: "ティア名 (Enterで確定)", bgColor: "背景色",
+                specialBgInfo: "特殊な背景色は変更できません", texture: "テクスチャ",
+                textColor: "文字色", textSizeLabel: "文字サイズ",
+                none: "なし", gloss: "光沢", glow: "グロー", cloth: "布",
+                tileBgColor: "タイル背景色", imageAdjustment: "画像調整",
+                moveX: "X方向移動", moveY: "Y方向移動", scale: "拡大率", opacity: "透過度",
+                textEditor: "テキスト編集", content: "内容", bold: "太字", font: "フォント",
+                autoResize: "サイズ自動調整",
+                invalidFile: "無効なプロジェクトファイルです。",
+                loadFileFailed: "プロジェクトファイルの読み込みに失敗しました。",
+                restoreDefaults: "デフォルトに戻す",
+                exportFailed: "画像の出力に失敗しました。コンソールを確認してください。"
+            },
+            en: {
+                appTitle: "Tier List Maker",
+                save: "Save", load: "Load", exportImage: "Export", help: "Help",
+                settings: "Global Settings", export: "Export Image", helpPanel: "Instructions",
+                tierEditor: "Editor", tileEditor: "Tile Editor", back: "Back",
+                displayScale: "Display Scale",
+                tierListBg: "Tier List Background", tileSize: "Tile Size",
+                tileBorderColor: "Tile Border Color", tileBorderWidth: "Tile Border Width",
+                tileCornerRadius: "Tile Corner Radius", tierDisplaySettings: "Tier Visibility",
+                fileFormat: "File Format", imageScale: "Image Scale (Quality)",
+                executeExport: "Export Image",
+                help1: "Add Image Tile:", help1_desc: "Drag and drop an image from your PC onto a tier area.",
+                help2: "Add Text Tile:", help2_desc: "Double-click on an empty space within a tier to create a text tile.",
+                help3: "Move Tile:", help3_desc: "Drag a tile to move it to any position or tier.",
+                help4: "Delete Tile:", help4_desc: "Hover over a tile and click the '×' button to delete it.",
+                help5: "Edit Tile:", help5_desc: "Double-click a tile to open its edit panel on the left.",
+                help6: "Edit Tier:", help6_desc: "Click a tier label (e.g., SSS) to open its edit panel.",
+                help7: "Save:", help7_desc: "Save your current progress as a project file (.json).",
+                help8: "Load:", help8_desc: "Load a project file to resume your work.",
+                help9: "Export Image:", help9_desc: "Download your tier list as a single image file.",
+                tierName: "Tier Name (Press Enter)", bgColor: "Background Color",
+                specialBgInfo: "Special backgrounds cannot be changed.", texture: "Texture",
+                textColor: "Text Color", textSizeLabel: "Text Size",
+                none: "None", gloss: "Gloss", glow: "Glow", cloth: "Cloth",
+                tileBgColor: "Tile Background Color", imageAdjustment: "Image Adjustment",
+                moveX: "X-Position", moveY: "Y-Position", scale: "Scale", opacity: "Opacity",
+                textEditor: "Text Editor", content: "Content", bold: "Bold", font: "Font",
+                autoResize: "Auto-fit Size",
+                invalidFile: "Invalid project file.",
+                loadFileFailed: "Failed to load the project file.",
+                restoreDefaults: "Restore Defaults",
+                exportFailed: "Image export failed. Check the console for details."
+            }
+        };
+
+        const initialSettings = {
+            displayScale: 1.0,
+            tableBgColor: '#000000',
+            tile: { size: 64, borderColor: '#FFFFFF', borderWidth: 2, borderRadius: 8, bgColor: 'rgba(0,0,0,0)' }
+        };
+
+        // --- アプリケーションの全状態を管理するオブジェクト ---
+        let appState = {
+            language: 'ja',
+            settings: JSON.parse(JSON.stringify(initialSettings)), // Deep copy
+            tiers: [],
+            activePanel: 'settings',
+            editingTierId: null,
+            editingTileId: null,
+            editingTileTierId: null,
+        };
+
+        // --- DOM要素の参照 ---
+        const appTitleEl = document.getElementById('app-title');
+        const sidebar = document.getElementById('sidebar');
+        const tierListContainer = document.getElementById('tier-list-container');
+        const saveBtn = document.getElementById('save-btn');
+        const loadBtn = document.getElementById('load-btn');
+        const loadInput = document.getElementById('load-input');
+        const exportBtn = document.getElementById('export-btn');
+        const helpBtn = document.getElementById('help-btn');
+        const langSwitcherBtn = document.getElementById('lang-switcher-btn');
+
+        // --- ヘルパー関数 ---
+        function t(key) {
+            return translations[appState.language][key] || key;
+        }
+
+        // --- 初期化処理 ---
+        function initializeApp() {
+            const defaultTiers = [
+                { id: 'sss', name: 'SSS', color: 'tier-sss-bg', textColor: '#FFFFFF', textSize: 24, isVisible: true, texture: 'glow' },
+                { id: 'ss', name: 'SS', color: 'tier-ss-bg', textColor: '#FFFFFF', textSize: 24, isVisible: true, texture: 'gloss' },
+                { id: 's', name: 'S', color: 'tier-s-bg', textColor: '#FFFFFF', textSize: 24, isVisible: true, texture: 'gloss' },
+                { id: 'a', name: 'A', color: '#EF4444', textColor: '#FFFFFF', textSize: 24, isVisible: true, texture: 'cloth' },
+                { id: 'b', name: 'B', color: '#EAB308', textColor: '#FFFFFF', textSize: 24, isVisible: true, texture: 'cloth' },
+                { id: 'c', name: 'C', color: '#22C55E', textColor: '#FFFFFF', textSize: 24, isVisible: true, texture: 'cloth' },
+                { id: 'd', name: 'D', color: '#3B82F6', textColor: '#FFFFFF', textSize: 24, isVisible: true, texture: 'none' },
+                { id: 'e', name: 'E', color: '#8B5CF6', textColor: '#FFFFFF', textSize: 24, isVisible: true, texture: 'none' },
+                { id: 'unknown', name: '不明', color: '#6B7280', textColor: '#FFFFFF', textSize: 24, isVisible: true, texture: 'none' },
+                { id: 'unranked', name: '選外', color: '#1F2937', textColor: '#FFFFFF', textSize: 24, isVisible: true, texture: 'none' },
+            ];
+            appState.tiers = defaultTiers.map(t => ({ ...t, items: [] }));
+            renderAll();
+        }
+        
+        // --- レンダリング関連 ---
+        function renderAll() { 
+            renderHeader();
+            renderSidebar(); 
+            renderTierList(); 
+        }
+
+        function renderHeader() {
+            appTitleEl.textContent = t('appTitle');
+            saveBtn.textContent = t('save');
+            loadBtn.textContent = t('load');
+            exportBtn.textContent = t('exportImage');
+            helpBtn.textContent = t('help');
+            langSwitcherBtn.textContent = appState.language === 'ja' ? 'English' : '日本語';
+
+            const activeClassMap = {
+                export: 'bg-purple-600 hover:bg-purple-700',
+                help: 'bg-green-600 hover:bg-green-700',
+            };
+            const defaultClass = 'bg-gray-600 hover:bg-gray-700';
+
+            [exportBtn, helpBtn].forEach(btn => {
+                const btnId = btn.id.replace('-btn', '');
+                btn.className = 'text-white font-bold py-2 px-4 rounded-lg transition-colors';
+                if (appState.activePanel === btnId) {
+                    btn.classList.add(...activeClassMap[btnId].split(' '));
+                } else {
+                    btn.classList.add(...defaultClass.split(' '));
+                }
+            });
+        }
+
+        function renderSidebar() {
+            let content = '';
+            switch (appState.activePanel) {
+                case 'settings': content = getSettingsPanelHTML(); break;
+                case 'export': content = getExportPanelHTML(); break;
+                case 'help': content = getHelpPanelHTML(); break;
+                case 'edit-tier': content = getEditTierPanelHTML(); break;
+                case 'edit-tile': content = getEditTilePanelHTML(); break;
+                default: content = getSettingsPanelHTML();
+            }
+            sidebar.innerHTML = content;
+            addSidebarEventListeners();
+        }
+
+        function renderTierList() {
+            tierListContainer.innerHTML = '';
+            tierListContainer.style.backgroundColor = appState.settings.tableBgColor;
+            
+            const scaleWrapper = document.createElement('div');
+            scaleWrapper.id = 'tier-list-content-wrapper';
+            const scale = appState.settings.displayScale || 1;
+            scaleWrapper.style.transform = `scale(${scale})`;
+            scaleWrapper.style.transformOrigin = 'top left';
+            scaleWrapper.style.width = `${100 / scale}%`;
+
+            appState.tiers.forEach(tier => {
+                if (!tier.isVisible) return;
+                const tierEl = document.createElement('div');
+                tierEl.className = 'flex mb-1';
+                
+                const labelContainer = document.createElement('div');
+                const textureClass = tier.texture !== 'none' ? `tier-label-${tier.texture}` : '';
+                labelContainer.className = `tier-label w-20 flex-shrink-0 flex items-center justify-center font-bold text-xl cursor-pointer rounded-md ${tier.color.startsWith('tier-') ? tier.color : ''} ${textureClass}`;
+                
+                if (!tier.color.startsWith('tier-')) { labelContainer.style.backgroundColor = tier.color; }
+                labelContainer.style.color = tier.textColor;
+                labelContainer.style.fontSize = `${tier.textSize}px`;
+                labelContainer.dataset.tierId = tier.id;
+                labelContainer.innerHTML = `<span class="tier-label-text">${tier.name}</span>`;
+                labelContainer.onclick = () => {
+                    switchPanel('edit-tier', { tierId: tier.id });
+                };
+
+                const itemsContainer = document.createElement('div');
+                itemsContainer.className = 'flex-1 bg-gray-800/50 min-h-[80px] p-2 flex flex-wrap gap-2 items-start content-start tier-dropzone';
+                itemsContainer.dataset.tierId = tier.id;
+                
+                tier.items.forEach(item => {
+                    const tileEl = createTileElement(item, tier.id);
+                    itemsContainer.appendChild(tileEl);
+                });
+
+                tierEl.appendChild(labelContainer);
+                tierEl.appendChild(itemsContainer);
+                scaleWrapper.appendChild(tierEl);
+            });
+            
+            tierListContainer.appendChild(scaleWrapper);
+            setupDragAndDrop();
+        }
+
+        function createTileElement(item, tierId) {
+            const s = appState.settings.tile;
+            const tileEl = document.createElement('div');
+            tileEl.className = 'tile cursor-grab';
+            tileEl.dataset.itemId = item.id;
+            tileEl.dataset.tierId = tierId;
+            tileEl.style.width = `${s.size}px`;
+            tileEl.style.height = `${s.size}px`;
+            tileEl.style.border = `${s.borderWidth}px solid ${s.borderColor}`;
+            tileEl.style.borderRadius = `${s.borderRadius}px`;
+            tileEl.style.backgroundColor = item.bgColor || s.bgColor;
+            tileEl.style.overflow = 'hidden';
+
+            if (item.type === 'image') {
+                const imgContainer = document.createElement('div');
+                imgContainer.className = 'tile-image-container';
+                imgContainer.style.backgroundImage = `url(${item.content})`;
+                imgContainer.style.opacity = item.opacity ?? 1;
+                const scale = item.scale || 1;
+                const posX = item.posX || 0;
+                const posY = item.posY || 0;
+                imgContainer.style.backgroundSize = `${scale * 100}%`;
+                imgContainer.style.backgroundPosition = `calc(50% + ${posX}px) calc(50% + ${posY}px)`;
+                tileEl.appendChild(imgContainer);
+            } else { // text
+                tileEl.classList.add('flex', 'items-center', 'justify-center', 'p-1');
+                const textSpan = document.createElement('span');
+                textSpan.textContent = item.content;
+                textSpan.style.color = item.textColor || '#FFFFFF';
+                textSpan.style.fontSize = `${item.textSize || 16}px`;
+                textSpan.style.fontWeight = item.isBold ? 'bold' : 'normal';
+                textSpan.style.fontFamily = item.fontFamily || "'Roboto', 'Noto Sans JP'";
+                textSpan.style.textAlign = 'center';
+                tileEl.appendChild(textSpan);
+                setTimeout(() => {
+                    if(item.autoResize && textSpan.getBoundingClientRect().width > s.size - 10) {
+                        let currentSize = item.textSize || 16;
+                        while(textSpan.getBoundingClientRect().width > s.size - 10 && currentSize > 8) {
+                            currentSize--;
+                            textSpan.style.fontSize = `${currentSize}px`;
+                        }
+                    }
+                }, 0);
+            }
+            
+            const deleteBtn = document.createElement('div');
+            deleteBtn.className = 'tile-delete-btn';
+            deleteBtn.innerHTML = '&times;';
+            deleteBtn.onclick = (e) => { e.stopPropagation(); deleteTile(tierId, item.id); };
+            tileEl.appendChild(deleteBtn);
+
+            tileEl.ondblclick = () => {
+                switchPanel('edit-tile', { tileId: item.id, tierId: tierId });
+            };
+            return tileEl;
+        }
+
+        // --- サイドバーHTML生成 ---
+        function getBackButtonHTML(targetPanel = 'settings') {
+            return `<button class="w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg transition-colors mb-4" onclick="switchPanel('${targetPanel}')">&larr; ${t('back')}</button>`;
+        }
+
+        function getSettingsPanelHTML() {
+            const s = appState.settings;
+            return `
+                <h2 class="text-xl font-bold mb-4 border-b border-gray-600 pb-2">${t('settings')}</h2>
+                <div class="space-y-4">
+                     <div>
+                        <label class="block text-sm font-medium text-gray-300">${t('displayScale')}: <span id="displayScaleValue">${s.displayScale.toFixed(2)}</span>x</label>
+                        <input type="range" id="displayScale" min="0.5" max="1.5" step="0.05" value="${s.displayScale}" class="w-full">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300">${t('tierListBg')}</label>
+                        <input type="color" id="tableBgColor" value="${s.tableBgColor}" class="w-full h-8 p-1 bg-gray-700 border border-gray-600 rounded-md">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300">${t('tileSize')}: <span id="tileSizeValue">${s.tile.size}</span>px</label>
+                        <input type="range" id="tileSize" min="50" max="200" value="${s.tile.size}" class="w-full">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300">${t('tileBorderColor')}</label>
+                        <input type="color" id="tileBorderColor" value="${s.tile.borderColor}" class="w-full h-8 p-1 bg-gray-700 border border-gray-600 rounded-md">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300">${t('tileBorderWidth')}: <span id="tileBorderWidthValue">${s.tile.borderWidth}</span>px</label>
+                        <input type="range" id="tileBorderWidth" min="0" max="10" value="${s.tile.borderWidth}" class="w-full">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300">${t('tileCornerRadius')}: <span id="tileBorderRadiusValue">${s.tile.borderRadius}</span>px</label>
+                        <input type="range" id="tileBorderRadius" min="0" max="50" value="${s.tile.borderRadius}" class="w-full">
+                    </div>
+                    <button id="restore-global-settings-btn" class="w-full bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded-lg transition-colors">${t('restoreDefaults')}</button>
+                </div>
+                <h3 class="text-lg font-bold mt-6 mb-2 border-b border-gray-600 pb-2">${t('tierDisplaySettings')}</h3>
+                <div class="space-y-2">
+                    ${appState.tiers.map(t => `
+                        <div class="flex items-center justify-between">
+                            <label for="vis-${t.id}" class="text-gray-300">${t.name}</label>
+                            <input type="checkbox" id="vis-${t.id}" data-tier-id="${t.id}" class="form-checkbox h-5 w-5 text-indigo-600 bg-gray-700 border-gray-600 rounded focus:ring-indigo-500" ${t.isVisible ? 'checked' : ''}>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+        
+        function getExportPanelHTML() {
+            return `
+                ${getBackButtonHTML()}
+                <h2 class="text-xl font-bold mb-4 border-b border-gray-600 pb-2">${t('export')}</h2>
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300">${t('fileFormat')}</label>
+                        <select id="export-format" class="w-full bg-gray-700 border border-gray-600 rounded-md p-2">
+                            <option value="png">PNG</option>
+                            <option value="jpeg">JPEG</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300">${t('imageScale')}: <span id="exportScaleValue">1</span>x</label>
+                        <input type="range" id="export-scale" min="1" max="3" value="1" step="0.5" class="w-full">
+                    </div>
+                    <button id="execute-export-btn" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-lg transition-colors">${t('executeExport')}</button>
+                </div>
+            `;
+        }
+
+        function getHelpPanelHTML() {
+            return `
+                ${getBackButtonHTML()}
+                <h2 class="text-xl font-bold mb-4 border-b border-gray-600 pb-2">${t('helpPanel')}</h2>
+                <div class="space-y-3 text-gray-300 text-sm">
+                    <p><strong>${t('help1')}</strong> ${t('help1_desc')}</p>
+                    <p><strong>${t('help2')}</strong> ${t('help2_desc')}</p>
+                    <p><strong>${t('help3')}</strong> ${t('help3_desc')}</p>
+                    <p><strong>${t('help4')}</strong> ${t('help4_desc')}</p>
+                    <p><strong>${t('help5')}</strong> ${t('help5_desc')}</p>
+                    <p><strong>${t('help6')}</strong> ${t('help6_desc')}</p>
+                    <p><strong>${t('help7')}</strong> ${t('help7_desc')}</p>
+                    <p><strong>${t('help8')}</strong> ${t('help8_desc')}</p>
+                    <p><strong>${t('help9')}</strong> ${t('help9_desc')}</p>
+                </div>
+            `;
+        }
+
+        function getEditTierPanelHTML() {
+            const tier = appState.tiers.find(t => t.id === appState.editingTierId);
+            if (!tier) return getBackButtonHTML();
+            const textureOptions = [
+                { value: 'none', label: t('none') }, { value: 'gloss', label: t('gloss') },
+                { value: 'glow', label: t('glow') }, { value: 'cloth', label: t('cloth') }
+            ];
+            return `
+                ${getBackButtonHTML()}
+                <h2 class="text-xl font-bold mb-4 border-b border-gray-600 pb-2">'${tier.name}' ${t('tierEditor')}</h2>
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300">${t('tierName')}</label>
+                        <input type="text" id="tierName" value="${tier.name}" class="w-full bg-gray-700 border border-gray-600 rounded-md p-2">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300">${t('bgColor')}</label>
+                        <input type="color" id="tierColor" value="${tier.color.startsWith('tier-') ? '#ffffff' : tier.color}" class="w-full h-8 p-1 bg-gray-700 border border-gray-600 rounded-md" ${tier.color.startsWith('tier-') ? 'disabled' : ''}>
+                        <small class="text-xs text-gray-400">${tier.color.startsWith('tier-') ? t('specialBgInfo') : ''}</small>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300">${t('texture')}</label>
+                        <select id="tierTexture" class="w-full bg-gray-700 border border-gray-600 rounded-md p-2">
+                            ${textureOptions.map(opt => `<option value="${opt.value}" ${tier.texture === opt.value ? 'selected' : ''}>${opt.label}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300">${t('textColor')}</label>
+                        <input type="color" id="tierTextColor" value="${tier.textColor}" class="w-full h-8 p-1 bg-gray-700 border border-gray-600 rounded-md">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300">${t('textSizeLabel')}: <span id="tierTextSizeValue">${tier.textSize}</span>px</label>
+                        <input type="range" id="tierTextSize" min="12" max="48" value="${tier.textSize}" class="w-full">
+                    </div>
+                </div>
+            `;
+        }
+        
+        function getEditTilePanelHTML() {
+            const tier = appState.tiers.find(t => t.id === appState.editingTileTierId);
+            if (!tier) return getBackButtonHTML();
+            const tile = tier.items.find(i => i.id === appState.editingTileId);
+            if (!tile) return getBackButtonHTML();
+
+            let content = `
+                ${getBackButtonHTML()}
+                <h2 class="text-xl font-bold mb-4 border-b border-gray-600 pb-2">${t('tileEditor')}</h2>
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300">${t('tileBgColor')}</label>
+                        <input type="color" id="tileBgColor" value="${tile.bgColor || appState.settings.tile.bgColor}" class="w-full h-8 p-1 bg-gray-700 border border-gray-600 rounded-md">
+                    </div>
+            `;
+
+            if (tile.type === 'image') {
+                content += `
+                    <h3 class="text-lg font-bold mt-4 mb-2 border-b border-gray-700 pb-1">${t('imageAdjustment')}</h3>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300">${t('moveX')}: <span id="tilePosXValue">${tile.posX || 0}</span>px</label>
+                        <input type="range" id="tilePosX" min="-50" max="50" value="${tile.posX || 0}" class="w-full">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300">${t('moveY')}: <span id="tilePosYValue">${tile.posY || 0}</span>px</label>
+                        <input type="range" id="tilePosY" min="-50" max="50" value="${tile.posY || 0}" class="w-full">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300">${t('scale')}: <span id="tileScaleValue">${tile.scale || 1}</span>x</label>
+                        <input type="range" id="tileScale" min="0.5" max="3" step="0.1" value="${tile.scale || 1}" class="w-full">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300">${t('opacity')}: <span id="tileOpacityValue">${tile.opacity ?? 1}</span></label>
+                        <input type="range" id="tileOpacity" min="0" max="1" step="0.05" value="${tile.opacity ?? 1}" class="w-full">
+                    </div>
+                `;
+            } else { // text
+                const fonts = [
+                    { name: 'Roboto', value: "'Roboto', 'Noto Sans JP', sans-serif" },
+                    { name: 'Noto Sans JP', value: "'Noto Sans JP', sans-serif" },
+                    { name: 'Yuji Syuku', value: "'Yuji Syuku', serif" },
+                    { name: 'RocknRoll One', value: "'RocknRoll One', sans-serif" }
+                ];
+                content += `
+                    <h3 class="text-lg font-bold mt-4 mb-2 border-b border-gray-700 pb-1">${t('textEditor')}</h3>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300">${t('content')}</label>
+                        <textarea id="textContent" class="w-full bg-gray-700 border border-gray-600 rounded-md p-2" rows="3">${tile.content}</textarea>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300">${t('font')}</label>
+                        <select id="textFontFamily" class="w-full bg-gray-700 border border-gray-600 rounded-md p-2">
+                            ${fonts.map(f => `<option value="${f.value}" ${tile.fontFamily === f.value ? 'selected' : ''}>${f.name}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300">${t('textColor')}</label>
+                        <input type="color" id="textColor" value="${tile.textColor || '#FFFFFF'}" class="w-full h-8 p-1 bg-gray-700 border border-gray-600 rounded-md">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300">${t('textSizeLabel')}: <span id="textSizeValue">${tile.textSize || 16}</span>px</label>
+                        <input type="range" id="textSize" min="8" max="60" value="${tile.textSize || 16}" class="w-full">
+                    </div>
+                    <div class="flex items-center">
+                        <input type="checkbox" id="isBold" class="form-checkbox h-5 w-5 text-indigo-600" ${tile.isBold ? 'checked' : ''}>
+                        <label for="isBold" class="ml-2 text-gray-300">${t('bold')}</label>
+                    </div>
+                    <div class="flex items-center">
+                        <input type="checkbox" id="autoResize" class="form-checkbox h-5 w-5 text-indigo-600" ${tile.autoResize !== false ? 'checked' : ''}>
+                        <label for="autoResize" class="ml-2 text-gray-300">${t('autoResize')}</label>
+                    </div>
+                `;
+            }
+            content += `<button id="restore-tile-settings-btn" class="w-full mt-4 bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded-lg transition-colors">${t('restoreDefaults')}</button></div>`;
+            return content;
+        }
+
+        // --- イベントリスナー設定 ---
+        function addSidebarEventListeners() {
+            const handleInput = (selector, action) => { const el = document.querySelector(selector); if (el) el.addEventListener('input', action); };
+            const handleChange = (selector, action) => { const el = document.querySelector(selector); if (el) el.addEventListener('change', action); };
+            const handleClick = (selector, action) => { const el = document.querySelector(selector); if (el) el.addEventListener('click', action); };
+            const handleKeydown = (selector, action) => { const el = document.querySelector(selector); if (el) el.addEventListener('keydown', action); };
+
+            // 全体設定
+            handleInput('#displayScale', e => { 
+                document.getElementById('displayScaleValue').textContent = parseFloat(e.target.value).toFixed(2);
+                updateSettings({ displayScale: parseFloat(e.target.value) });
+            });
+            handleChange('#tableBgColor', e => updateSettings({ tableBgColor: e.target.value }));
+            handleInput('#tileSize', e => { document.getElementById('tileSizeValue').textContent = e.target.value; updateSettings({ tile: { ...appState.settings.tile, size: parseInt(e.target.value) } }); });
+            handleChange('#tileBorderColor', e => updateSettings({ tile: { ...appState.settings.tile, borderColor: e.target.value } }));
+            handleInput('#tileBorderWidth', e => { document.getElementById('tileBorderWidthValue').textContent = e.target.value; updateSettings({ tile: { ...appState.settings.tile, borderWidth: parseInt(e.target.value) } }); });
+            handleInput('#tileBorderRadius', e => { document.getElementById('tileBorderRadiusValue').textContent = e.target.value; updateSettings({ tile: { ...appState.settings.tile, borderRadius: parseInt(e.target.value) } }); });
+            document.querySelectorAll('input[type="checkbox"][data-tier-id]').forEach(el => {
+                el.onchange = (e) => {
+                    const tier = appState.tiers.find(t => t.id === e.target.dataset.tierId);
+                    if(tier) { tier.isVisible = e.target.checked; renderTierList(); }
+                };
+            });
+            handleClick('#restore-global-settings-btn', () => {
+                appState.settings = JSON.parse(JSON.stringify(initialSettings));
+                renderAll();
+            });
+
+            // 画像出力
+            handleInput('#export-scale', e => document.getElementById('exportScaleValue').textContent = e.target.value);
+            handleClick('#execute-export-btn', executeExport);
+
+            // ティア編集
+            const tier = appState.tiers.find(t => t.id === appState.editingTierId);
+            if(tier) {
+                handleKeydown('#tierName', e => { if (e.key === 'Enter') { updateTier(tier.id, { name: e.target.value }); e.target.blur(); } });
+                handleChange('#tierColor', e => updateTier(tier.id, { color: e.target.value }));
+                handleChange('#tierTextColor', e => updateTier(tier.id, { textColor: e.target.value }));
+                handleInput('#tierTextSize', e => { document.getElementById('tierTextSizeValue').textContent = e.target.value; updateTier(tier.id, { textSize: parseInt(e.target.value) }); });
+                handleChange('#tierTexture', e => updateTier(tier.id, { texture: e.target.value }));
+            }
+            
+            // タイル編集
+            const editTier = appState.tiers.find(t => t.id === appState.editingTileTierId);
+            if(editTier) {
+                const tile = editTier.items.find(i => i.id === appState.editingTileId);
+                if (tile) {
+                    handleClick('#restore-tile-settings-btn', () => restoreTileDefaults(tile.id, editTier.id, tile.type));
+                    handleChange('#tileBgColor', e => updateTile(tile.id, editTier.id, { bgColor: e.target.value }));
+                    if (tile.type === 'image') {
+                        handleInput('#tilePosX', e => { document.getElementById('tilePosXValue').textContent = e.target.value; updateTile(tile.id, editTier.id, { posX: parseInt(e.target.value) }); });
+                        handleInput('#tilePosY', e => { document.getElementById('tilePosYValue').textContent = e.target.value; updateTile(tile.id, editTier.id, { posY: parseInt(e.target.value) }); });
+                        handleInput('#tileScale', e => { document.getElementById('tileScaleValue').textContent = e.target.value; updateTile(tile.id, editTier.id, { scale: parseFloat(e.target.value) }); });
+                        handleInput('#tileOpacity', e => { document.getElementById('tileOpacityValue').textContent = e.target.value; updateTile(tile.id, editTier.id, { opacity: parseFloat(e.target.value) }); });
+                    } else { // text
+                        handleInput('#textContent', e => updateTile(tile.id, editTier.id, { content: e.target.value }));
+                        handleChange('#textFontFamily', e => updateTile(tile.id, editTier.id, { fontFamily: e.target.value }));
+                        handleChange('#textColor', e => updateTile(tile.id, editTier.id, { textColor: e.target.value }));
+                        handleInput('#textSize', e => { document.getElementById('textSizeValue').textContent = e.target.value; updateTile(tile.id, editTier.id, { textSize: parseInt(e.target.value) }); });
+                        handleChange('#isBold', e => updateTile(tile.id, editTier.id, { isBold: e.target.checked }));
+                        handleChange('#autoResize', e => updateTile(tile.id, editTier.id, { autoResize: e.target.checked }));
+                    }
+                }
+            }
+        }
+
+        function setupDragAndDrop() {
+            const dropzones = document.querySelectorAll('.tier-dropzone');
+            dropzones.forEach(zone => {
+                new Sortable(zone, {
+                    group: 'tier-items', animation: 150, ghostClass: 'sortable-ghost',
+                    onEnd: (evt) => {
+                        const itemId = evt.item.dataset.itemId;
+                        const fromTierId = evt.from.dataset.tierId;
+                        const toTierId = evt.to.dataset.tierId;
+                        const fromTier = appState.tiers.find(t => t.id === fromTierId);
+                        const itemIndex = fromTier.items.findIndex(i => i.id === itemId);
+                        const [movedItem] = fromTier.items.splice(itemIndex, 1);
+                        const toTier = appState.tiers.find(t => t.id === toTierId);
+                        toTier.items.splice(evt.newDraggableIndex, 0, movedItem);
+                        renderTierList();
+                    }
+                });
+                zone.addEventListener('dragover', e => e.preventDefault());
+                zone.addEventListener('drop', e => {
+                    e.preventDefault();
+                    if (e.dataTransfer.files.length > 0) {
+                        const file = e.dataTransfer.files[0];
+                        if (file.type.startsWith('image/')) {
+                            const reader = new FileReader();
+                            reader.onload = (readEvent) => { addImageTile(zone.dataset.tierId, readEvent.target.result); };
+                            reader.readAsDataURL(file);
+                        }
+                    }
+                });
+                zone.addEventListener('dblclick', (e) => { if (e.target === zone) { addTextTile(zone.dataset.tierId); } });
+            });
+        }
+
+        // --- 状態更新ロジック ---
+        function updateSettings(newSettings) { appState.settings = { ...appState.settings, ...newSettings }; renderAll(); }
+        function updateTier(tierId, newProps) {
+            const tier = appState.tiers.find(t => t.id === tierId);
+            if (tier) { Object.assign(tier, newProps); renderAll(); }
+        }
+        function updateTile(tileId, tierId, newProps) {
+            const tier = appState.tiers.find(t => t.id === tierId);
+            if(tier) {
+                const tile = tier.items.find(i => i.id === tileId);
+                if (tile) { Object.assign(tile, newProps); renderTierList(); }
+            }
+        }
+        function restoreTileDefaults(tileId, tierId, type) {
+            const defaultValues = {
+                bgColor: 'rgba(0,0,0,0)',
+                ...(type === 'image' && { posX: 0, posY: 0, scale: 1, opacity: 1 }),
+                ...(type === 'text' && { textColor: '#FFFFFF', textSize: 16, isBold: false, fontFamily: "'Roboto', 'Noto Sans JP', sans-serif" })
+            };
+            updateTile(tileId, tierId, defaultValues);
+            renderSidebar(); // 再描画してスライダーなどを更新
+        }
+        function addImageTile(tierId, imageDataUrl) {
+            const tier = appState.tiers.find(t => t.id === tierId);
+            if (tier) { tier.items.push({ id: `item-${Date.now()}`, type: 'image', content: imageDataUrl }); renderTierList(); }
+        }
+        function addTextTile(tierId) {
+            const tier = appState.tiers.find(t => t.id === tierId);
+            if (tier) { tier.items.push({ id: `item-${Date.now()}`, type: 'text', content: t('content'), autoResize: true }); renderTierList(); }
+        }
+        function deleteTile(tierId, itemId) {
+            const tier = appState.tiers.find(t => t.id === tierId);
+            if (tier) { tier.items = tier.items.filter(item => item.id !== itemId); renderTierList(); }
+        }
+        function switchPanel(panelName, context = {}) {
+            if (appState.activePanel === panelName && !context.tierId && !context.tileId) {
+                appState.activePanel = 'settings';
+            } else {
+                appState.activePanel = panelName;
+            }
+            
+            if (panelName === 'edit-tier') appState.editingTierId = context.tierId;
+            if (panelName === 'edit-tile') {
+                appState.editingTileId = context.tileId;
+                appState.editingTileTierId = context.tierId;
+            }
+            renderAll();
+        }
+
+        // --- 機能ボタンの処理 ---
+        saveBtn.addEventListener('click', () => {
+            const dataStr = JSON.stringify(appState, null, 2);
+            const blob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `tier-list-maker-project-${Date.now()}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+        });
+
+        loadBtn.addEventListener('click', () => loadInput.click());
+        loadInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (readEvent) => {
+                    try {
+                        const loadedState = JSON.parse(readEvent.result);
+                        if (loadedState.settings && loadedState.tiers) {
+                            appState = { ...appState, ...loadedState };
+                            renderAll();
+                        } else { alert(t('invalidFile')); }
+                    } catch (err) { alert(t('loadFileFailed')); console.error(err); }
+                };
+                reader.readAsText(file);
+            }
+            e.target.value = '';
+        });
+
+        async function executeExport() {
+            const elementToCapture = document.getElementById('tier-list-content-wrapper');
+            const exportButton = document.getElementById('execute-export-btn');
+
+            if (!elementToCapture || !exportButton) return;
+
+            const originalButtonText = exportButton.textContent;
+            exportButton.textContent = '...';
+            exportButton.disabled = true;
+
+            // Create a clone for capturing
+            const clone = elementToCapture.cloneNode(true);
+            
+            // Style the clone for full content rendering
+            clone.style.width = `${elementToCapture.clientWidth}px`; // Use current width
+            clone.style.height = 'auto';
+            clone.style.transform = ''; // Remove scaling for capture
+
+            // Create a temporary off-screen container for the clone
+            const printContainer = document.createElement('div');
+            printContainer.style.position = 'absolute';
+            printContainer.style.left = '-9999px';
+            printContainer.style.top = '0';
+            printContainer.appendChild(clone);
+            document.body.appendChild(printContainer);
+
+            try {
+                await new Promise(resolve => setTimeout(resolve, 100)); // allow reflow
+
+                const scale = parseFloat(document.getElementById('export-scale')?.value) || 1;
+                const format = document.getElementById('export-format')?.value || 'png';
+                
+                const canvas = await html2canvas(clone, {
+                    backgroundColor: appState.settings.tableBgColor,
+                    scale: scale,
+                    useCORS: true,
+                    onclone: (clonedDoc) => {
+                        clonedDoc.querySelectorAll('.tile-delete-btn').forEach(btn => btn.style.display = 'none');
+                    }
+                });
+                
+                const image = canvas.toDataURL(`image/${format}`, format === 'jpeg' ? 0.9 : 1.0);
+                const a = document.createElement('a');
+                a.href = image;
+                a.download = `tier-list-${Date.now()}.${format}`;
+                a.click();
+
+            } catch (err) {
+                console.error("Image export failed:", err);
+                alert(t('exportFailed'));
+            } finally {
+                document.body.removeChild(printContainer);
+                exportButton.textContent = originalButtonText;
+                exportButton.disabled = false;
+            }
+        }
+        
+        exportBtn.addEventListener('click', () => switchPanel('export'));
+        helpBtn.addEventListener('click', () => switchPanel('help'));
+        langSwitcherBtn.addEventListener('click', () => {
+            appState.language = appState.language === 'ja' ? 'en' : 'ja';
+            renderAll();
+        });
+
+
+        // --- アプリケーション起動 ---
+        initializeApp();
+    </script>
+</body>
+</html>
