@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>画像放り込みティア表メーカー</title>
+    <link rel="icon" href="favicon4.png">
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -27,7 +28,7 @@
         .tier-s-bg { background: linear-gradient(145deg, #8d8d8d, #ffffff 50%, #8d8d8d); }
         
         .tier-label { position: relative; overflow: visible; } /* overflow: visible に変更 */
-        .tier-label-text { text-shadow: 2px 2px 5px rgba(0,0,0,0.8); z-index: 1; position: relative; }
+        .tier-label-text { /* text-shadowはJSで制御するため削除 */ z-index: 1; position: relative; }
 
         /* --- テクスチャ用CSS --- */
         .tier-label-gloss::after {
@@ -114,7 +115,9 @@
                 tileCornerRadius: "タイルの角丸", tierDisplaySettings: "ティア表示設定",
                 fileFormat: "ファイル形式", imageScale: "画像スケール（品質）",
                 executeExport: "出力実行",
-                help1: "画像タイル追加:", help1_desc: "PCから画像をティア表のタイルエリアにドラッグ＆ドロップします。",
+                // ▼▼▼ ここから修正 ▼▼▼
+                help1: "画像タイル追加:", help1_desc: "PCから画像をティア表のタイルエリアにドラッグ＆ドロップします。ティア表に追加する画像はわかりやすいフォルダにまとめておくことをおすすめします。",
+                // ▲▲▲ ここまで修正 ▲▲▲
                 help2: "テキストタイル追加:", help2_desc: "ティア表の何もない場所をダブルクリックするとテキストタイルが生成されます。",
                 help3: "タイル移動:", help3_desc: "タイルをドラッグして、好きなティアや位置に移動できます。",
                 help4: "タイル削除:", help4_desc: "タイルにマウスを乗せると右上に表示される「×」ボタンで削除できます。",
@@ -124,12 +127,13 @@
                 help8: "呼出:", help8_desc: "保存したプロジェクトファイルを読み込み、作業を再開します。",
                 help9: "画像出力:", help9_desc: "作成したティア表を一枚の画像としてダウンロードします。",
                 tierName: "ティア名 (Enterで確定)", bgColor: "背景色",
-                specialBgInfo: "特殊な背景色は変更できません", texture: "テクスチャ",
+                specialBgInfo: "背景色は変更できません", texture: "テクスチャ",
                 textColor: "文字色", textSizeLabel: "文字サイズ",
                 none: "なし", gloss: "光沢", glow: "グロー", cloth: "布",
                 tileBgColor: "タイル背景色", imageAdjustment: "画像調整",
-                moveX: "X方向移動", moveY: "Y方向移動", scale: "拡大率", opacity: "透過度",
+                moveX: "位置 (X/Y)", moveY: "Y方向移動", scale: "拡大率", opacity: "透過度",
                 textEditor: "テキスト編集", content: "内容", bold: "太字", font: "フォント",
+                italic: "斜体", shadow: "影", bgColorOpacity: "背景 透過度",
                 autoResize: "サイズ自動調整",
                 invalidFile: "無効なプロジェクトファイルです。",
                 loadFileFailed: "プロジェクトファイルの読み込みに失敗しました。",
@@ -147,7 +151,9 @@
                 tileCornerRadius: "Tile Corner Radius", tierDisplaySettings: "Tier Visibility",
                 fileFormat: "File Format", imageScale: "Image Scale (Quality)",
                 executeExport: "Export Image",
-                help1: "Add Image Tile:", help1_desc: "Drag and drop an image from your PC onto a tier area.",
+                // ▼▼▼ ここから修正 ▼▼▼
+                help1: "Add Image Tile:", help1_desc: "Drag and drop an image from your PC onto a tier area. We recommend organizing the images you want to add to the tier list into a clear folder beforehand.",
+                // ▲▲▲ ここまで修正 ▲▲▲
                 help2: "Add Text Tile:", help2_desc: "Double-click on an empty space within a tier to create a text tile.",
                 help3: "Move Tile:", help3_desc: "Drag a tile to move it to any position or tier.",
                 help4: "Delete Tile:", help4_desc: "Hover over a tile and click the '×' button to delete it.",
@@ -157,12 +163,13 @@
                 help8: "Load:", help8_desc: "Load a project file to resume your work.",
                 help9: "Export Image:", help9_desc: "Download your tier list as a single image file.",
                 tierName: "Tier Name (Press Enter)", bgColor: "Background Color",
-                specialBgInfo: "Special backgrounds cannot be changed.", texture: "Texture",
+                specialBgInfo: "Background cannot be changed", texture: "Texture",
                 textColor: "Text Color", textSizeLabel: "Text Size",
                 none: "None", gloss: "Gloss", glow: "Glow", cloth: "Cloth",
                 tileBgColor: "Tile Background Color", imageAdjustment: "Image Adjustment",
-                moveX: "X-Position", moveY: "Y-Position", scale: "Scale", opacity: "Opacity",
+                moveX: "Position (X/Y)", moveY: "Y-Position", scale: "Scale", opacity: "Opacity",
                 textEditor: "Text Editor", content: "Content", bold: "Bold", font: "Font",
+                italic: "Italic", shadow: "Shadow", bgColorOpacity: "BG Opacity",
                 autoResize: "Auto-fit Size",
                 invalidFile: "Invalid project file.",
                 loadFileFailed: "Failed to load the project file.",
@@ -188,6 +195,11 @@
             editingTileTierId: null,
         };
 
+        // --- 履歴管理 (Undo/Redo) ---
+        let history = [];
+        let historyIndex = -1;
+        const MAX_HISTORY_STATES = 50; // 保存する履歴の最大数
+
         // --- DOM要素の参照 ---
         const appTitleEl = document.getElementById('app-title');
         const sidebar = document.getElementById('sidebar');
@@ -204,22 +216,101 @@
             return translations[appState.language][key] || key;
         }
 
+        function hexToRgba(hex, alpha) {
+            if (!hex || typeof hex !== 'string') {
+                return `rgba(0, 0, 0, ${alpha})`;
+            }
+            if (hex.startsWith('rgba')) {
+                return hex.replace(/, ?\d?\.?\d*?\)$/, `, ${alpha})`);
+            }
+            if (hex.startsWith('rgb')) {
+                return hex.replace('rgb', 'rgba').replace(')', `, ${alpha})`);
+            }
+            if (hex === 'transparent') {
+                return 'rgba(0,0,0,0)';
+            }
+            if (!hex.startsWith('#')) {
+                 return `rgba(0, 0, 0, ${alpha})`;
+            }
+
+            let c = hex.substring(1).split('');
+            if (c.length === 3) {
+                c = [c[0], c[0], c[1], c[1], c[2], c[2]];
+            }
+            c = '0x' + c.join('');
+            return `rgba(${(c >> 16) & 255}, ${(c >> 8) & 255}, ${c & 255}, ${alpha})`;
+        }
+
+        // --- 履歴管理関数 ---
+        /**
+         * 現在のアプリケーションの状態を履歴に保存します。
+         */
+        function saveStateToHistory() {
+            // 履歴の途中で新しい操作が行われた場合、それ以降の履歴（Redo可能な履歴）を削除
+            if (historyIndex < history.length - 1) {
+                history.splice(historyIndex + 1);
+            }
+
+            // 現在の状態をディープコピーして履歴に追加
+            history.push(JSON.parse(JSON.stringify(appState)));
+
+            // 履歴が最大数を超えた場合は、最も古い履歴を削除
+            if (history.length > MAX_HISTORY_STATES) {
+                history.shift();
+            }
+
+            // インデックスを最新の状態に更新
+            historyIndex = history.length - 1;
+        }
+
+        /**
+         * 履歴から特定の状態を復元します。
+         * @param {object} state - 復元する状態オブジェクト
+         */
+        function restoreStateFromHistory(state) {
+            // appStateを履歴の状態に完全に置き換え
+            appState = JSON.parse(JSON.stringify(state)); // 参照問題を避けるためディープコピー
+            renderAll(); // 復元した状態でUIを再描画
+        }
+
+        /**
+         * 一つ前の状態に戻します (Undo)。
+         */
+        function undo() {
+            if (historyIndex > 0) {
+                historyIndex--;
+                restoreStateFromHistory(history[historyIndex]);
+            }
+        }
+
+        /**
+         * Undoした操作をやり直します (Redo)。
+         */
+        function redo() {
+            if (historyIndex < history.length - 1) {
+                historyIndex++;
+                restoreStateFromHistory(history[historyIndex]);
+            }
+        }
+
+
         // --- 初期化処理 ---
         function initializeApp() {
             const defaultTiers = [
-                { id: 'sss', name: 'SSS', color: 'tier-sss-bg', textColor: '#FFFFFF', textSize: 24, isVisible: true, texture: 'glow' },
-                { id: 'ss', name: 'SS', color: 'tier-ss-bg', textColor: '#FFFFFF', textSize: 24, isVisible: true, texture: 'gloss' },
-                { id: 's', name: 'S', color: 'tier-s-bg', textColor: '#FFFFFF', textSize: 24, isVisible: true, texture: 'gloss' },
-                { id: 'a', name: 'A', color: '#EF4444', textColor: '#FFFFFF', textSize: 24, isVisible: true, texture: 'cloth' },
-                { id: 'b', name: 'B', color: '#EAB308', textColor: '#FFFFFF', textSize: 24, isVisible: true, texture: 'cloth' },
-                { id: 'c', name: 'C', color: '#22C55E', textColor: '#FFFFFF', textSize: 24, isVisible: true, texture: 'cloth' },
-                { id: 'd', name: 'D', color: '#3B82F6', textColor: '#FFFFFF', textSize: 24, isVisible: true, texture: 'none' },
-                { id: 'e', name: 'E', color: '#8B5CF6', textColor: '#FFFFFF', textSize: 24, isVisible: true, texture: 'none' },
-                { id: 'unknown', name: '不明', color: '#6B7280', textColor: '#FFFFFF', textSize: 24, isVisible: true, texture: 'none' },
-                { id: 'unranked', name: '選外', color: '#1F2937', textColor: '#FFFFFF', textSize: 24, isVisible: true, texture: 'none' },
+                { id: 'sss', name: 'SSS', color: 'tier-sss-bg', textColor: '#FFFFFF', textSize: 24, isVisible: true, texture: 'glow', isBold: true, isItalic: false, hasShadow: true },
+                { id: 'ss', name: 'SS', color: 'tier-ss-bg', textColor: '#FFFFFF', textSize: 24, isVisible: true, texture: 'gloss', isBold: true, isItalic: false, hasShadow: true },
+                { id: 's', name: 'S', color: 'tier-s-bg', textColor: '#FFFFFF', textSize: 24, isVisible: true, texture: 'gloss', isBold: true, isItalic: false, hasShadow: true },
+                { id: 'a', name: 'A', color: '#EF4444', textColor: '#FFFFFF', textSize: 24, isVisible: true, texture: 'cloth', isBold: false, isItalic: false, hasShadow: false },
+                { id: 'b', name: 'B', color: '#EAB308', textColor: '#FFFFFF', textSize: 24, isVisible: true, texture: 'cloth', isBold: false, isItalic: false, hasShadow: false },
+                { id: 'c', name: 'C', color: '#22C55E', textColor: '#FFFFFF', textSize: 24, isVisible: true, texture: 'cloth', isBold: false, isItalic: false, hasShadow: false },
+                { id: 'd', name: 'D', color: '#3B82F6', textColor: '#FFFFFF', textSize: 24, isVisible: true, texture: 'none', isBold: false, isItalic: false, hasShadow: false },
+                { id: 'e', name: 'E', color: '#8B5CF6', textColor: '#FFFFFF', textSize: 24, isVisible: true, texture: 'none', isBold: false, isItalic: false, hasShadow: false },
+                { id: 'unknown', name: '不明', color: '#6B7280', textColor: '#FFFFFF', textSize: 24, isVisible: true, texture: 'none', isBold: false, isItalic: false, hasShadow: false },
+                { id: 'unranked', name: '選外', color: '#1F2937', textColor: '#FFFFFF', textSize: 24, isVisible: true, texture: 'none', isBold: false, isItalic: false, hasShadow: false },
             ];
             appState.tiers = defaultTiers.map(t => ({ ...t, items: [] }));
             renderAll();
+            saveStateToHistory();
         }
         
         // --- レンダリング関連 ---
@@ -274,7 +365,7 @@
             
             const scaleWrapper = document.createElement('div');
             scaleWrapper.id = 'tier-list-content-wrapper';
-            const scale = appState.settings.displayScale || 1;
+            const scale = appState.settings.displayScale ?? 1;
             scaleWrapper.style.transform = `scale(${scale})`;
             scaleWrapper.style.transformOrigin = 'top left';
             scaleWrapper.style.width = `${100 / scale}%`;
@@ -292,7 +383,17 @@
                 labelContainer.style.color = tier.textColor;
                 labelContainer.style.fontSize = `${tier.textSize}px`;
                 labelContainer.dataset.tierId = tier.id;
-                labelContainer.innerHTML = `<span class="tier-label-text">${tier.name}</span>`;
+
+                const labelTextSpan = document.createElement('span');
+                labelTextSpan.className = 'tier-label-text';
+                labelTextSpan.textContent = tier.name;
+                labelTextSpan.style.fontWeight = tier.isBold ? 'bold' : 'normal';
+                labelTextSpan.style.fontStyle = tier.isItalic ? 'italic' : 'normal';
+                labelTextSpan.style.textShadow = tier.hasShadow ? '2px 2px 5px rgba(0,0,0,0.8)' : 'none';
+                
+                labelContainer.innerHTML = ''; // 既存のコンテンツをクリア
+                labelContainer.appendChild(labelTextSpan);
+
                 labelContainer.onclick = () => {
                     switchPanel('edit-tier', { tierId: tier.id });
                 };
@@ -325,7 +426,11 @@
             tileEl.style.height = `${s.size}px`;
             tileEl.style.border = `${s.borderWidth}px solid ${s.borderColor}`;
             tileEl.style.borderRadius = `${s.borderRadius}px`;
-            tileEl.style.backgroundColor = item.bgColor || s.bgColor;
+            
+            const bgColor = item.bgColor ?? s.bgColor;
+            const bgOpacity = item.bgColorOpacity ?? 1;
+            tileEl.style.backgroundColor = hexToRgba(bgColor, bgOpacity);
+
             tileEl.style.overflow = 'hidden';
 
             if (item.type === 'image') {
@@ -333,9 +438,9 @@
                 imgContainer.className = 'tile-image-container';
                 imgContainer.style.backgroundImage = `url(${item.content})`;
                 imgContainer.style.opacity = item.opacity ?? 1;
-                const scale = item.scale || 1;
-                const posX = item.posX || 0;
-                const posY = item.posY || 0;
+                const scale = item.scale ?? 1;
+                const posX = item.posX ?? 0;
+                const posY = item.posY ?? 0;
                 imgContainer.style.backgroundSize = `${scale * 100}%`;
                 imgContainer.style.backgroundPosition = `calc(50% + ${posX}px) calc(50% + ${posY}px)`;
                 tileEl.appendChild(imgContainer);
@@ -343,15 +448,17 @@
                 tileEl.classList.add('flex', 'items-center', 'justify-center', 'p-1');
                 const textSpan = document.createElement('span');
                 textSpan.textContent = item.content;
-                textSpan.style.color = item.textColor || '#FFFFFF';
-                textSpan.style.fontSize = `${item.textSize || 16}px`;
+                textSpan.style.color = item.textColor ?? '#FFFFFF';
+                textSpan.style.fontSize = `${item.textSize ?? 16}px`;
                 textSpan.style.fontWeight = item.isBold ? 'bold' : 'normal';
-                textSpan.style.fontFamily = item.fontFamily || "'Roboto', 'Noto Sans JP'";
+                textSpan.style.fontStyle = item.isItalic ? 'italic' : 'normal';
+                textSpan.style.textShadow = item.hasShadow ? '2px 2px 4px rgba(0,0,0,0.7)' : 'none';
+                textSpan.style.fontFamily = item.fontFamily ?? "'Roboto', 'Noto Sans JP'";
                 textSpan.style.textAlign = 'center';
                 tileEl.appendChild(textSpan);
                 setTimeout(() => {
                     if(item.autoResize && textSpan.getBoundingClientRect().width > s.size - 10) {
-                        let currentSize = item.textSize || 16;
+                        let currentSize = item.textSize ?? 16;
                         while(textSpan.getBoundingClientRect().width > s.size - 10 && currentSize > 8) {
                             currentSize--;
                             textSpan.style.fontSize = `${currentSize}px`;
@@ -382,31 +489,35 @@
             return `
                 <h2 class="text-xl font-bold mb-4 border-b border-gray-600 pb-2">${t('settings')}</h2>
                 <div class="space-y-4">
-                     <div>
-                        <label class="block text-sm font-medium text-gray-300">${t('displayScale')}: <span id="displayScaleValue">${s.displayScale.toFixed(2)}</span>x</label>
-                        <input type="range" id="displayScale" min="0.5" max="1.5" step="0.05" value="${s.displayScale}" class="w-full">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-300">${t('tierListBg')}</label>
-                        <input type="color" id="tableBgColor" value="${s.tableBgColor}" class="w-full h-8 p-1 bg-gray-700 border border-gray-600 rounded-md">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-300">${t('tileSize')}: <span id="tileSizeValue">${s.tile.size}</span>px</label>
-                        <input type="range" id="tileSize" min="50" max="200" value="${s.tile.size}" class="w-full">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-300">${t('tileBorderColor')}</label>
-                        <input type="color" id="tileBorderColor" value="${s.tile.borderColor}" class="w-full h-8 p-1 bg-gray-700 border border-gray-600 rounded-md">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-300">${t('tileBorderWidth')}: <span id="tileBorderWidthValue">${s.tile.borderWidth}</span>px</label>
-                        <input type="range" id="tileBorderWidth" min="0" max="10" value="${s.tile.borderWidth}" class="w-full">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-300">${t('tileCornerRadius')}: <span id="tileBorderRadiusValue">${s.tile.borderRadius}</span>px</label>
-                        <input type="range" id="tileBorderRadius" min="0" max="50" value="${s.tile.borderRadius}" class="w-full">
-                    </div>
-                    <button id="restore-global-settings-btn" class="w-full bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded-lg transition-colors">${t('restoreDefaults')}</button>
+                        <div class="flex items-center gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-300 mb-1">${t('tierListBg')}</label>
+                                <input type="color" id="tableBgColor" value="${s.tableBgColor}" class="w-16 h-8 p-1 bg-gray-700 border border-gray-600 rounded-md">
+                            </div>
+                            <div class="flex-1">
+                                <label class="block text-sm font-medium text-gray-300">${t('displayScale')}: <span id="displayScaleValue">${s.displayScale.toFixed(2)}</span>x</label>
+                                <input type="range" id="displayScale" min="0.5" max="1.5" step="0.05" value="${s.displayScale}" class="w-full">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300">${t('tileSize')}: <span id="tileSizeValue">${s.tile.size}</span>px</label>
+                            <input type="range" id="tileSize" min="50" max="200" value="${s.tile.size}" class="w-full">
+                        </div>
+                        <div class="flex items-center gap-4">
+                             <div>
+                                <label class="block text-sm font-medium text-gray-300 mb-1">${t('tileBorderColor')}</label>
+                                <input type="color" id="tileBorderColor" value="${s.tile.borderColor}" class="w-16 h-8 p-1 bg-gray-700 border border-gray-600 rounded-md">
+                            </div>
+                            <div class="flex-1">
+                                <label class="block text-sm font-medium text-gray-300">${t('tileBorderWidth')}: <span id="tileBorderWidthValue">${s.tile.borderWidth}</span>px</label>
+                                <input type="range" id="tileBorderWidth" min="0" max="10" value="${s.tile.borderWidth}" class="w-full">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300">${t('tileCornerRadius')}: <span id="tileBorderRadiusValue">${s.tile.borderRadius}</span>px</label>
+                            <input type="range" id="tileBorderRadius" min="0" max="50" value="${s.tile.borderRadius}" class="w-full">
+                        </div>
+                        <button id="restore-global-settings-btn" class="w-full bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded-lg transition-colors">${t('restoreDefaults')}</button>
                 </div>
                 <h3 class="text-lg font-bold mt-6 mb-2 border-b border-gray-600 pb-2">${t('tierDisplaySettings')}</h3>
                 <div class="space-y-2">
@@ -474,24 +585,44 @@
                         <label class="block text-sm font-medium text-gray-300">${t('tierName')}</label>
                         <input type="text" id="tierName" value="${tier.name}" class="w-full bg-gray-700 border border-gray-600 rounded-md p-2">
                     </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-300">${t('bgColor')}</label>
-                        <input type="color" id="tierColor" value="${tier.color.startsWith('tier-') ? '#ffffff' : tier.color}" class="w-full h-8 p-1 bg-gray-700 border border-gray-600 rounded-md" ${tier.color.startsWith('tier-') ? 'disabled' : ''}>
-                        <small class="text-xs text-gray-400">${tier.color.startsWith('tier-') ? t('specialBgInfo') : ''}</small>
+                    <div class="flex items-end gap-4">
+                        <div class="flex-1">
+                            <label class="block text-sm font-medium text-gray-300 mb-1">${t('bgColor')}</label>
+                            ${tier.color.startsWith('tier-')
+                                ? `<div class="w-full h-8 px-2 bg-gray-800 border border-gray-700 rounded-md flex items-center justify-center text-xs text-gray-400 text-center">${t('specialBgInfo')}</div>`
+                                : `<input type="color" id="tierColor" value="${tier.color}" class="w-full h-8 p-1 bg-gray-700 border border-gray-600 rounded-md">`
+                            }
+                        </div>
+                        <div class="flex-1">
+                            <label class="block text-sm font-medium text-gray-300 mb-1">${t('texture')}</label>
+                            <select id="tierTexture" class="w-full bg-gray-700 border border-gray-600 rounded-md p-1 h-8 text-sm">
+                                ${textureOptions.map(opt => `<option value="${opt.value}" ${tier.texture === opt.value ? 'selected' : ''}>${opt.label}</option>`).join('')}
+                            </select>
+                        </div>
                     </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-300">${t('texture')}</label>
-                        <select id="tierTexture" class="w-full bg-gray-700 border border-gray-600 rounded-md p-2">
-                            ${textureOptions.map(opt => `<option value="${opt.value}" ${tier.texture === opt.value ? 'selected' : ''}>${opt.label}</option>`).join('')}
-                        </select>
+                     <div class="flex items-center gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-1">${t('textColor')}</label>
+                            <input type="color" id="tierTextColor" value="${tier.textColor}" class="w-20 h-8 p-1 bg-gray-700 border border-gray-600 rounded-md">
+                        </div>
+                        <div class="flex-1">
+                            <label class="block text-sm font-medium text-gray-300">${t('textSizeLabel')}: <span id="tierTextSizeValue">${tier.textSize}</span>px</label>
+                            <input type="range" id="tierTextSize" min="12" max="48" value="${tier.textSize}" class="w-full">
+                        </div>
                     </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-300">${t('textColor')}</label>
-                        <input type="color" id="tierTextColor" value="${tier.textColor}" class="w-full h-8 p-1 bg-gray-700 border border-gray-600 rounded-md">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-300">${t('textSizeLabel')}: <span id="tierTextSizeValue">${tier.textSize}</span>px</label>
-                        <input type="range" id="tierTextSize" min="12" max="48" value="${tier.textSize}" class="w-full">
+                    <div class="flex items-center justify-around py-2">
+                        <div class="flex items-center">
+                            <input type="checkbox" id="tierIsBold" class="form-checkbox h-5 w-5 text-indigo-600" ${tier.isBold ? 'checked' : ''}>
+                            <label for="tierIsBold" class="ml-2 text-gray-300">${t('bold')}</label>
+                        </div>
+                        <div class="flex items-center">
+                            <input type="checkbox" id="tierIsItalic" class="form-checkbox h-5 w-5 text-indigo-600" ${tier.isItalic ? 'checked' : ''}>
+                            <label for="tierIsItalic" class="ml-2 text-gray-300">${t('italic')}</label>
+                        </div>
+                        <div class="flex items-center">
+                            <input type="checkbox" id="tierHasShadow" class="form-checkbox h-5 w-5 text-indigo-600" ${tier.hasShadow ? 'checked' : ''}>
+                            <label for="tierHasShadow" class="ml-2 text-gray-300">${t('shadow')}</label>
+                        </div>
                     </div>
                 </div>
             `;
@@ -507,9 +638,15 @@
                 ${getBackButtonHTML()}
                 <h2 class="text-xl font-bold mb-4 border-b border-gray-600 pb-2">${t('tileEditor')}</h2>
                 <div class="space-y-4">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-300">${t('tileBgColor')}</label>
-                        <input type="color" id="tileBgColor" value="${tile.bgColor || appState.settings.tile.bgColor}" class="w-full h-8 p-1 bg-gray-700 border border-gray-600 rounded-md">
+                    <div class="flex items-center gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-1">${t('tileBgColor')}</label>
+                            <input type="color" id="tileBgColor" value="${tile.bgColor ?? appState.settings.tile.bgColor}" class="w-20 h-8 p-1 bg-gray-700 border border-gray-600 rounded-md">
+                        </div>
+                        <div class="flex-1">
+                            <label class="block text-sm font-medium text-gray-300">${t('bgColorOpacity')}: <span id="bgColorOpacityValue">${tile.bgColorOpacity ?? 1}</span></label>
+                            <input type="range" id="bgColorOpacity" min="0" max="1" step="0.05" value="${tile.bgColorOpacity ?? 1}" class="w-full">
+                        </div>
                     </div>
             `;
 
@@ -517,20 +654,17 @@
                 content += `
                     <h3 class="text-lg font-bold mt-4 mb-2 border-b border-gray-700 pb-1">${t('imageAdjustment')}</h3>
                     <div>
-                        <label class="block text-sm font-medium text-gray-300">${t('moveX')}: <span id="tilePosXValue">${tile.posX || 0}</span>px</label>
-                        <input type="range" id="tilePosX" min="-50" max="50" value="${tile.posX || 0}" class="w-full">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-300">${t('moveY')}: <span id="tilePosYValue">${tile.posY || 0}</span>px</label>
-                        <input type="range" id="tilePosY" min="-50" max="50" value="${tile.posY || 0}" class="w-full">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-300">${t('scale')}: <span id="tileScaleValue">${tile.scale || 1}</span>x</label>
-                        <input type="range" id="tileScale" min="0.5" max="3" step="0.1" value="${tile.scale || 1}" class="w-full">
-                    </div>
-                    <div>
                         <label class="block text-sm font-medium text-gray-300">${t('opacity')}: <span id="tileOpacityValue">${tile.opacity ?? 1}</span></label>
                         <input type="range" id="tileOpacity" min="0" max="1" step="0.05" value="${tile.opacity ?? 1}" class="w-full">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300">${t('scale')}: <span id="tileScaleValue">${tile.scale ?? 1}</span>x</label>
+                        <input type="range" id="tileScale" min="0.5" max="3" step="0.1" value="${tile.scale ?? 1}" class="w-full">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300">${t('moveX')}: <span id="tilePosXValue">${tile.posX ?? 0}</span>px</label>
+                        <input type="range" id="tilePosX" min="-50" max="50" value="${tile.posX ?? 0}" class="w-full">
+                        <input type="range" id="tilePosY" min="-50" max="50" value="${tile.posY ?? 0}" class="w-full mt-2">
                     </div>
                 `;
             } else { // text
@@ -552,17 +686,29 @@
                             ${fonts.map(f => `<option value="${f.value}" ${tile.fontFamily === f.value ? 'selected' : ''}>${f.name}</option>`).join('')}
                         </select>
                     </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-300">${t('textColor')}</label>
-                        <input type="color" id="textColor" value="${tile.textColor || '#FFFFFF'}" class="w-full h-8 p-1 bg-gray-700 border border-gray-600 rounded-md">
+                    <div class="flex items-center gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-1">${t('textColor')}</label>
+                            <input type="color" id="textColor" value="${tile.textColor ?? '#FFFFFF'}" class="w-20 h-8 p-1 bg-gray-700 border border-gray-600 rounded-md">
+                        </div>
+                        <div class="flex-1">
+                            <label class="block text-sm font-medium text-gray-300">${t('textSizeLabel')}: <span id="textSizeValue">${tile.textSize ?? 16}</span>px</label>
+                            <input type="range" id="textSize" min="8" max="60" value="${tile.textSize ?? 16}" class="w-full">
+                        </div>
                     </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-300">${t('textSizeLabel')}: <span id="textSizeValue">${tile.textSize || 16}</span>px</label>
-                        <input type="range" id="textSize" min="8" max="60" value="${tile.textSize || 16}" class="w-full">
-                    </div>
-                    <div class="flex items-center">
-                        <input type="checkbox" id="isBold" class="form-checkbox h-5 w-5 text-indigo-600" ${tile.isBold ? 'checked' : ''}>
-                        <label for="isBold" class="ml-2 text-gray-300">${t('bold')}</label>
+                    <div class="flex items-center justify-around py-2">
+                        <div class="flex items-center">
+                            <input type="checkbox" id="isBold" class="form-checkbox h-5 w-5 text-indigo-600" ${tile.isBold ? 'checked' : ''}>
+                            <label for="isBold" class="ml-2 text-gray-300">${t('bold')}</label>
+                        </div>
+                        <div class="flex items-center">
+                            <input type="checkbox" id="isItalic" class="form-checkbox h-5 w-5 text-indigo-600" ${tile.isItalic ? 'checked' : ''}>
+                            <label for="isItalic" class="ml-2 text-gray-300">${t('italic')}</label>
+                        </div>
+                        <div class="flex items-center">
+                            <input type="checkbox" id="hasShadow" class="form-checkbox h-5 w-5 text-indigo-600" ${tile.hasShadow ? 'checked' : ''}>
+                            <label for="hasShadow" class="ml-2 text-gray-300">${t('shadow')}</label>
+                        </div>
                     </div>
                     <div class="flex items-center">
                         <input type="checkbox" id="autoResize" class="form-checkbox h-5 w-5 text-indigo-600" ${tile.autoResize !== false ? 'checked' : ''}>
@@ -594,12 +740,13 @@
             document.querySelectorAll('input[type="checkbox"][data-tier-id]').forEach(el => {
                 el.onchange = (e) => {
                     const tier = appState.tiers.find(t => t.id === e.target.dataset.tierId);
-                    if(tier) { tier.isVisible = e.target.checked; renderTierList(); }
+                    if(tier) { tier.isVisible = e.target.checked; renderTierList(); saveStateToHistory(); }
                 };
             });
             handleClick('#restore-global-settings-btn', () => {
                 appState.settings = JSON.parse(JSON.stringify(initialSettings));
                 renderAll();
+                saveStateToHistory();
             });
 
             // 画像出力
@@ -614,6 +761,9 @@
                 handleChange('#tierTextColor', e => updateTier(tier.id, { textColor: e.target.value }));
                 handleInput('#tierTextSize', e => { document.getElementById('tierTextSizeValue').textContent = e.target.value; updateTier(tier.id, { textSize: parseInt(e.target.value) }); });
                 handleChange('#tierTexture', e => updateTier(tier.id, { texture: e.target.value }));
+                handleChange('#tierIsBold', e => updateTier(tier.id, { isBold: e.target.checked }));
+                handleChange('#tierIsItalic', e => updateTier(tier.id, { isItalic: e.target.checked }));
+                handleChange('#tierHasShadow', e => updateTier(tier.id, { hasShadow: e.target.checked }));
             }
             
             // タイル編集
@@ -623,9 +773,10 @@
                 if (tile) {
                     handleClick('#restore-tile-settings-btn', () => restoreTileDefaults(tile.id, editTier.id, tile.type));
                     handleChange('#tileBgColor', e => updateTile(tile.id, editTier.id, { bgColor: e.target.value }));
+                    handleInput('#bgColorOpacity', e => { document.getElementById('bgColorOpacityValue').textContent = parseFloat(e.target.value).toFixed(2); updateTile(tile.id, editTier.id, { bgColorOpacity: parseFloat(e.target.value) }); });
                     if (tile.type === 'image') {
                         handleInput('#tilePosX', e => { document.getElementById('tilePosXValue').textContent = e.target.value; updateTile(tile.id, editTier.id, { posX: parseInt(e.target.value) }); });
-                        handleInput('#tilePosY', e => { document.getElementById('tilePosYValue').textContent = e.target.value; updateTile(tile.id, editTier.id, { posY: parseInt(e.target.value) }); });
+                        handleInput('#tilePosY', e => { updateTile(tile.id, editTier.id, { posY: parseInt(e.target.value) }); });
                         handleInput('#tileScale', e => { document.getElementById('tileScaleValue').textContent = e.target.value; updateTile(tile.id, editTier.id, { scale: parseFloat(e.target.value) }); });
                         handleInput('#tileOpacity', e => { document.getElementById('tileOpacityValue').textContent = e.target.value; updateTile(tile.id, editTier.id, { opacity: parseFloat(e.target.value) }); });
                     } else { // text
@@ -634,6 +785,8 @@
                         handleChange('#textColor', e => updateTile(tile.id, editTier.id, { textColor: e.target.value }));
                         handleInput('#textSize', e => { document.getElementById('textSizeValue').textContent = e.target.value; updateTile(tile.id, editTier.id, { textSize: parseInt(e.target.value) }); });
                         handleChange('#isBold', e => updateTile(tile.id, editTier.id, { isBold: e.target.checked }));
+                        handleChange('#isItalic', e => updateTile(tile.id, editTier.id, { isItalic: e.target.checked }));
+                        handleChange('#hasShadow', e => updateTile(tile.id, editTier.id, { hasShadow: e.target.checked }));
                         handleChange('#autoResize', e => updateTile(tile.id, editTier.id, { autoResize: e.target.checked }));
                     }
                 }
@@ -655,6 +808,7 @@
                         const toTier = appState.tiers.find(t => t.id === toTierId);
                         toTier.items.splice(evt.newDraggableIndex, 0, movedItem);
                         renderTierList();
+                        saveStateToHistory();
                     }
                 });
                 zone.addEventListener('dragover', e => e.preventDefault());
@@ -674,38 +828,39 @@
         }
 
         // --- 状態更新ロジック ---
-        function updateSettings(newSettings) { appState.settings = { ...appState.settings, ...newSettings }; renderAll(); }
+        function updateSettings(newSettings) { appState.settings = { ...appState.settings, ...newSettings }; renderAll(); saveStateToHistory(); }
         function updateTier(tierId, newProps) {
             const tier = appState.tiers.find(t => t.id === tierId);
-            if (tier) { Object.assign(tier, newProps); renderAll(); }
+            if (tier) { Object.assign(tier, newProps); renderAll(); saveStateToHistory(); }
         }
         function updateTile(tileId, tierId, newProps) {
             const tier = appState.tiers.find(t => t.id === tierId);
             if(tier) {
                 const tile = tier.items.find(i => i.id === tileId);
-                if (tile) { Object.assign(tile, newProps); renderTierList(); }
+                if (tile) { Object.assign(tile, newProps); renderTierList(); saveStateToHistory(); }
             }
         }
         function restoreTileDefaults(tileId, tierId, type) {
             const defaultValues = {
                 bgColor: 'rgba(0,0,0,0)',
+                bgColorOpacity: 1,
                 ...(type === 'image' && { posX: 0, posY: 0, scale: 1, opacity: 1 }),
-                ...(type === 'text' && { textColor: '#FFFFFF', textSize: 16, isBold: false, fontFamily: "'Roboto', 'Noto Sans JP', sans-serif" })
+                ...(type === 'text' && { textColor: '#FFFFFF', textSize: 16, isBold: false, isItalic: false, hasShadow: false, fontFamily: "'Roboto', 'Noto Sans JP', sans-serif" })
             };
             updateTile(tileId, tierId, defaultValues);
-            renderSidebar(); // 再描画してスライダーなどを更新
+            renderSidebar();
         }
         function addImageTile(tierId, imageDataUrl) {
             const tier = appState.tiers.find(t => t.id === tierId);
-            if (tier) { tier.items.push({ id: `item-${Date.now()}`, type: 'image', content: imageDataUrl }); renderTierList(); }
+            if (tier) { tier.items.push({ id: `item-${Date.now()}`, type: 'image', content: imageDataUrl, bgColorOpacity: 1 }); renderTierList(); saveStateToHistory(); }
         }
         function addTextTile(tierId) {
             const tier = appState.tiers.find(t => t.id === tierId);
-            if (tier) { tier.items.push({ id: `item-${Date.now()}`, type: 'text', content: t('content'), autoResize: true }); renderTierList(); }
+            if (tier) { tier.items.push({ id: `item-${Date.now()}`, type: 'text', content: t('content'), autoResize: true, isBold: false, isItalic: false, hasShadow: false, bgColorOpacity: 1 }); renderTierList(); saveStateToHistory(); }
         }
         function deleteTile(tierId, itemId) {
             const tier = appState.tiers.find(t => t.id === tierId);
-            if (tier) { tier.items = tier.items.filter(item => item.id !== itemId); renderTierList(); }
+            if (tier) { tier.items = tier.items.filter(item => item.id !== itemId); renderTierList(); saveStateToHistory(); }
         }
         function switchPanel(panelName, context = {}) {
             if (appState.activePanel === panelName && !context.tierId && !context.tileId) {
@@ -745,6 +900,9 @@
                         if (loadedState.settings && loadedState.tiers) {
                             appState = { ...appState, ...loadedState };
                             renderAll();
+                            history = [];
+                            historyIndex = -1;
+                            saveStateToHistory();
                         } else { alert(t('invalidFile')); }
                     } catch (err) { alert(t('loadFileFailed')); console.error(err); }
                 };
@@ -766,8 +924,9 @@
             // Create a clone for capturing
             const clone = elementToCapture.cloneNode(true);
             
-            // Style the clone for full content rendering
-            clone.style.width = `${elementToCapture.clientWidth}px`; // Use current width
+            const currentScale = appState.settings.displayScale ?? 1;
+            clone.style.width = `${elementToCapture.clientWidth / currentScale}px`;
+            
             clone.style.height = 'auto';
             clone.style.transform = ''; // Remove scaling for capture
 
@@ -782,8 +941,8 @@
             try {
                 await new Promise(resolve => setTimeout(resolve, 100)); // allow reflow
 
-                const scale = parseFloat(document.getElementById('export-scale')?.value) || 1;
-                const format = document.getElementById('export-format')?.value || 'png';
+                const scale = parseFloat(document.getElementById('export-scale')?.value) ?? 1;
+                const format = document.getElementById('export-format')?.value ?? 'png';
                 
                 const canvas = await html2canvas(clone, {
                     backgroundColor: appState.settings.tableBgColor,
@@ -815,6 +974,30 @@
         langSwitcherBtn.addEventListener('click', () => {
             appState.language = appState.language === 'ja' ? 'en' : 'ja';
             renderAll();
+            // 言語変更は履歴に残さない
+        });
+
+        // --- Undo/Redo のショートカットキーリスナー ---
+        document.addEventListener('keydown', (e) => {
+            // テキスト入力中などはUndo/Redoを無効化
+            if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) {
+                return;
+            }
+
+            const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+            const ctrlKey = isMac ? e.metaKey : e.ctrlKey; // MacではCmdキー、その他ではCtrlキー
+
+            if (ctrlKey && e.key.toLowerCase() === 'z') {
+                e.preventDefault();
+                if (e.shiftKey) {
+                    redo(); // Ctrl+Shift+Z
+                } else {
+                    undo(); // Ctrl+Z
+                }
+            } else if (ctrlKey && e.key.toLowerCase() === 'y') {
+                e.preventDefault();
+                redo(); // Ctrl+Y
+            }
         });
 
 
