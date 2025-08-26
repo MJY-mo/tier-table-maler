@@ -115,9 +115,7 @@
                 tileCornerRadius: "タイルの角丸", tierDisplaySettings: "ティア表示設定",
                 fileFormat: "ファイル形式", imageScale: "画像スケール（品質）",
                 executeExport: "出力実行",
-                // ▼▼▼ ここから修正 ▼▼▼
                 help1: "画像タイル追加:", help1_desc: "PCから画像をティア表のタイルエリアにドラッグ＆ドロップします。ティア表に追加する画像はわかりやすいフォルダにまとめておくことをおすすめします。",
-                // ▲▲▲ ここまで修正 ▲▲▲
                 help2: "テキストタイル追加:", help2_desc: "ティア表の何もない場所をダブルクリックするとテキストタイルが生成されます。",
                 help3: "タイル移動:", help3_desc: "タイルをドラッグして、好きなティアや位置に移動できます。",
                 help4: "タイル削除:", help4_desc: "タイルにマウスを乗せると右上に表示される「×」ボタンで削除できます。",
@@ -151,9 +149,7 @@
                 tileCornerRadius: "Tile Corner Radius", tierDisplaySettings: "Tier Visibility",
                 fileFormat: "File Format", imageScale: "Image Scale (Quality)",
                 executeExport: "Export Image",
-                // ▼▼▼ ここから修正 ▼▼▼
                 help1: "Add Image Tile:", help1_desc: "Drag and drop an image from your PC onto a tier area. We recommend organizing the images you want to add to the tier list into a clear folder beforehand.",
-                // ▲▲▲ ここまで修正 ▲▲▲
                 help2: "Add Text Tile:", help2_desc: "Double-click on an empty space within a tier to create a text tile.",
                 help3: "Move Tile:", help3_desc: "Drag a tile to move it to any position or tier.",
                 help4: "Delete Tile:", help4_desc: "Hover over a tile and click the '×' button to delete it.",
@@ -793,6 +789,7 @@
             }
         }
 
+        // ▼▼▼ ここから修正 ▼▼▼
         function setupDragAndDrop() {
             const dropzones = document.querySelectorAll('.tier-dropzone');
             dropzones.forEach(zone => {
@@ -814,18 +811,32 @@
                 zone.addEventListener('dragover', e => e.preventDefault());
                 zone.addEventListener('drop', e => {
                     e.preventDefault();
-                    if (e.dataTransfer.files.length > 0) {
-                        const file = e.dataTransfer.files[0];
-                        if (file.type.startsWith('image/')) {
+                    const files = e.dataTransfer.files;
+                    if (files.length > 0) {
+                        const imageFiles = Array.from(files).filter(file => file.type.startsWith('image/'));
+                        if (imageFiles.length === 0) return;
+
+                        const imageDataUrls = [];
+                        let filesRead = 0;
+
+                        imageFiles.forEach(file => {
                             const reader = new FileReader();
-                            reader.onload = (readEvent) => { addImageTile(zone.dataset.tierId, readEvent.target.result); };
+                            reader.onload = (readEvent) => {
+                                imageDataUrls.push(readEvent.target.result);
+                                filesRead++;
+                                
+                                if (filesRead === imageFiles.length) {
+                                    addMultipleImageTiles(zone.dataset.tierId, imageDataUrls);
+                                }
+                            };
                             reader.readAsDataURL(file);
-                        }
+                        });
                     }
                 });
                 zone.addEventListener('dblclick', (e) => { if (e.target === zone) { addTextTile(zone.dataset.tierId); } });
             });
         }
+        // ▲▲▲ ここまで修正 ▲▲▲
 
         // --- 状態更新ロジック ---
         function updateSettings(newSettings) { appState.settings = { ...appState.settings, ...newSettings }; renderAll(); saveStateToHistory(); }
@@ -850,10 +861,31 @@
             updateTile(tileId, tierId, defaultValues);
             renderSidebar();
         }
-        function addImageTile(tierId, imageDataUrl) {
+        
+        // ▼▼▼ ここから修正 ▼▼▼
+        /**
+         * 複数の画像タイルを一度に追加します。
+         * @param {string} tierId - タイルを追加するティアのID
+         * @param {string[]} imageDataUrls - 追加する画像のData URLの配列
+         */
+        function addMultipleImageTiles(tierId, imageDataUrls) {
             const tier = appState.tiers.find(t => t.id === tierId);
-            if (tier) { tier.items.push({ id: `item-${Date.now()}`, type: 'image', content: imageDataUrl, bgColorOpacity: 1 }); renderTierList(); saveStateToHistory(); }
+            if (tier) {
+                imageDataUrls.forEach(url => {
+                    const newItem = { 
+                        id: `item-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, 
+                        type: 'image', 
+                        content: url, 
+                        bgColorOpacity: 1 
+                    };
+                    tier.items.push(newItem);
+                });
+                renderTierList();
+                saveStateToHistory();
+            }
         }
+        // ▲▲▲ ここまで修正 ▲▲▲
+        
         function addTextTile(tierId) {
             const tier = appState.tiers.find(t => t.id === tierId);
             if (tier) { tier.items.push({ id: `item-${Date.now()}`, type: 'text', content: t('content'), autoResize: true, isBold: false, isItalic: false, hasShadow: false, bgColorOpacity: 1 }); renderTierList(); saveStateToHistory(); }
