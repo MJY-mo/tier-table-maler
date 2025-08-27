@@ -69,6 +69,36 @@
         ::-webkit-scrollbar-track { background: #1f2937; }
         ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 4px; }
         ::-webkit-scrollbar-thumb:hover { background: #6b7280; }
+
+        /* --- ▼▼▼ 通知用のスタイルを追加 ▼▼▼ --- */
+        #notification-area {
+            position: fixed;
+            top: 80px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            align-items: center;
+        }
+        .notification {
+            padding: 12px 24px;
+            border-radius: 8px;
+            color: white;
+            font-weight: bold;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            opacity: 0;
+            transform: translateY(-20px);
+            transition: opacity 0.3s ease, transform 0.3s ease;
+        }
+        .notification.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        .notification.success { background-color: #22c55e; }
+        .notification.error { background-color: #ef4444; }
+        /* --- ▲▲▲ 通知用のスタイルを追加 ▲▲▲ --- */
     </style>
 </head>
 <body class="flex flex-col h-screen">
@@ -101,6 +131,10 @@
         </main>
     </div>
     
+    <!-- ▼▼▼ 通知表示エリアを追加 ▼▼▼ -->
+    <div id="notification-area"></div>
+    <!-- ▲▲▲ 通知表示エリアを追加 ▲▲▲ -->
+    
     <script>
         // --- 多言語対応データ ---
         const translations = {
@@ -110,7 +144,9 @@
                 settings: "全体設定", export: "画像出力", helpPanel: "操作説明",
                 tierEditor: "の編集", tileEditor: "タイル編集", back: "戻る",
                 displayScale: "表示スケール",
-                tierListBg: "ティア表 背景色", tileSize: "タイルサイズ",
+                tierListBg: "ティア表 背景色", 
+                tierListBgOpacity: "背景 透過度", // ▼▼▼ 追加 ▼▼▼
+                tileSize: "タイルサイズ",
                 tileBorderColor: "タイル枠の色", tileBorderWidth: "タイル枠の太さ",
                 tileCornerRadius: "タイルの角丸", tierDisplaySettings: "ティア表示設定",
                 fileFormat: "ファイル形式", imageScale: "画像スケール（品質）",
@@ -135,6 +171,7 @@
                 autoResize: "サイズ自動調整",
                 invalidFile: "無効なプロジェクトファイルです。",
                 loadFileFailed: "プロジェクトファイルの読み込みに失敗しました。",
+                loadFileSuccess: "プロジェクトを読み込みました。",
                 restoreDefaults: "デフォルトに戻す",
                 exportFailed: "画像の出力に失敗しました。コンソールを確認してください。"
             },
@@ -144,7 +181,9 @@
                 settings: "Global Settings", export: "Export Image", helpPanel: "Instructions",
                 tierEditor: "Editor", tileEditor: "Tile Editor", back: "Back",
                 displayScale: "Display Scale",
-                tierListBg: "Tier List Background", tileSize: "Tile Size",
+                tierListBg: "Tier List Background", 
+                tierListBgOpacity: "BG Opacity", // ▼▼▼ 追加 ▼▼▼
+                tileSize: "Tile Size",
                 tileBorderColor: "Tile Border Color", tileBorderWidth: "Tile Border Width",
                 tileCornerRadius: "Tile Corner Radius", tierDisplaySettings: "Tier Visibility",
                 fileFormat: "File Format", imageScale: "Image Scale (Quality)",
@@ -169,6 +208,7 @@
                 autoResize: "Auto-fit Size",
                 invalidFile: "Invalid project file.",
                 loadFileFailed: "Failed to load the project file.",
+                loadFileSuccess: "Project loaded successfully.",
                 restoreDefaults: "Restore Defaults",
                 exportFailed: "Image export failed. Check the console for details."
             }
@@ -177,6 +217,7 @@
         const initialSettings = {
             displayScale: 1.0,
             tableBgColor: '#000000',
+            tableBgOpacity: 1.0, // ▼▼▼ 追加 ▼▼▼
             tile: { size: 64, borderColor: '#FFFFFF', borderWidth: 2, borderRadius: 8, bgColor: 'rgba(0,0,0,0)' }
         };
 
@@ -206,11 +247,40 @@
         const exportBtn = document.getElementById('export-btn');
         const helpBtn = document.getElementById('help-btn');
         const langSwitcherBtn = document.getElementById('lang-switcher-btn');
+        const notificationArea = document.getElementById('notification-area');
 
         // --- ヘルパー関数 ---
         function t(key) {
             return translations[appState.language][key] || key;
         }
+
+        // ▼▼▼ 新しい通知表示関数 ▼▼▼
+        /**
+         * 画面上部にメッセージを表示します。
+         * @param {string} message 表示するメッセージ
+         * @param {boolean} isError エラーメッセージかどうか
+         */
+        function showNotification(message, isError = false) {
+            const notification = document.createElement('div');
+            notification.className = `notification ${isError ? 'error' : 'success'}`;
+            notification.textContent = message;
+            notificationArea.appendChild(notification);
+
+            // 表示アニメーション
+            setTimeout(() => {
+                notification.classList.add('show');
+            }, 10);
+
+            // 3秒後に自動で消す
+            setTimeout(() => {
+                notification.classList.remove('show');
+                // アニメーション終了後にDOMから削除
+                notification.addEventListener('transitionend', () => {
+                    notification.remove();
+                });
+            }, 3000);
+        }
+        // ▲▲▲ 新しい通知表示関数 ▲▲▲
 
         function hexToRgba(hex, alpha) {
             if (!hex || typeof hex !== 'string') {
@@ -357,7 +427,9 @@
 
         function renderTierList() {
             tierListContainer.innerHTML = '';
-            tierListContainer.style.backgroundColor = appState.settings.tableBgColor;
+            const bgColor = appState.settings.tableBgColor;
+            const bgOpacity = appState.settings.tableBgOpacity ?? 1.0;
+            tierListContainer.style.backgroundColor = hexToRgba(bgColor, bgOpacity);
             
             const scaleWrapper = document.createElement('div');
             scaleWrapper.id = 'tier-list-content-wrapper';
@@ -485,35 +557,39 @@
             return `
                 <h2 class="text-xl font-bold mb-4 border-b border-gray-600 pb-2">${t('settings')}</h2>
                 <div class="space-y-4">
-                        <div class="flex items-center gap-4">
                             <div>
-                                <label class="block text-sm font-medium text-gray-300 mb-1">${t('tierListBg')}</label>
-                                <input type="color" id="tableBgColor" value="${s.tableBgColor}" class="w-16 h-8 p-1 bg-gray-700 border border-gray-600 rounded-md">
-                            </div>
-                            <div class="flex-1">
                                 <label class="block text-sm font-medium text-gray-300">${t('displayScale')}: <span id="displayScaleValue">${s.displayScale.toFixed(2)}</span>x</label>
                                 <input type="range" id="displayScale" min="0.5" max="1.5" step="0.05" value="${s.displayScale}" class="w-full">
                             </div>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-300">${t('tileSize')}: <span id="tileSizeValue">${s.tile.size}</span>px</label>
-                            <input type="range" id="tileSize" min="50" max="200" value="${s.tile.size}" class="w-full">
-                        </div>
-                        <div class="flex items-center gap-4">
-                             <div>
-                                <label class="block text-sm font-medium text-gray-300 mb-1">${t('tileBorderColor')}</label>
-                                <input type="color" id="tileBorderColor" value="${s.tile.borderColor}" class="w-16 h-8 p-1 bg-gray-700 border border-gray-600 rounded-md">
+                            <div class="flex items-center gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-300 mb-1">${t('tierListBg')}</label>
+                                    <input type="color" id="tableBgColor" value="${s.tableBgColor}" class="w-16 h-8 p-1 bg-gray-700 border border-gray-600 rounded-md">
+                                </div>
+                                <div class="flex-1">
+                                    <label class="block text-sm font-medium text-gray-300">${t('tierListBgOpacity')}: <span id="tableBgOpacityValue">${(s.tableBgOpacity ?? 1.0).toFixed(2)}</span></label>
+                                    <input type="range" id="tableBgOpacity" min="0" max="1" step="0.05" value="${s.tableBgOpacity ?? 1.0}" class="w-full">
+                                </div>
                             </div>
-                            <div class="flex-1">
-                                <label class="block text-sm font-medium text-gray-300">${t('tileBorderWidth')}: <span id="tileBorderWidthValue">${s.tile.borderWidth}</span>px</label>
-                                <input type="range" id="tileBorderWidth" min="0" max="10" value="${s.tile.borderWidth}" class="w-full">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-300">${t('tileSize')}: <span id="tileSizeValue">${s.tile.size}</span>px</label>
+                                <input type="range" id="tileSize" min="50" max="200" value="${s.tile.size}" class="w-full">
                             </div>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-300">${t('tileCornerRadius')}: <span id="tileBorderRadiusValue">${s.tile.borderRadius}</span>px</label>
-                            <input type="range" id="tileBorderRadius" min="0" max="50" value="${s.tile.borderRadius}" class="w-full">
-                        </div>
-                        <button id="restore-global-settings-btn" class="w-full bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded-lg transition-colors">${t('restoreDefaults')}</button>
+                            <div class="flex items-center gap-4">
+                                 <div>
+                                    <label class="block text-sm font-medium text-gray-300 mb-1">${t('tileBorderColor')}</label>
+                                    <input type="color" id="tileBorderColor" value="${s.tile.borderColor}" class="w-16 h-8 p-1 bg-gray-700 border border-gray-600 rounded-md">
+                                </div>
+                                <div class="flex-1">
+                                    <label class="block text-sm font-medium text-gray-300">${t('tileBorderWidth')}: <span id="tileBorderWidthValue">${s.tile.borderWidth}</span>px</label>
+                                    <input type="range" id="tileBorderWidth" min="0" max="10" value="${s.tile.borderWidth}" class="w-full">
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-300">${t('tileCornerRadius')}: <span id="tileBorderRadiusValue">${s.tile.borderRadius}</span>px</label>
+                                <input type="range" id="tileBorderRadius" min="0" max="50" value="${s.tile.borderRadius}" class="w-full">
+                            </div>
+                            <button id="restore-global-settings-btn" class="w-full bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded-lg transition-colors">${t('restoreDefaults')}</button>
                 </div>
                 <h3 class="text-lg font-bold mt-6 mb-2 border-b border-gray-600 pb-2">${t('tierDisplaySettings')}</h3>
                 <div class="space-y-2">
@@ -729,6 +805,10 @@
                 updateSettings({ displayScale: parseFloat(e.target.value) });
             });
             handleChange('#tableBgColor', e => updateSettings({ tableBgColor: e.target.value }));
+            handleInput('#tableBgOpacity', e => { 
+                document.getElementById('tableBgOpacityValue').textContent = parseFloat(e.target.value).toFixed(2);
+                updateSettings({ tableBgOpacity: parseFloat(e.target.value) });
+            });
             handleInput('#tileSize', e => { document.getElementById('tileSizeValue').textContent = e.target.value; updateSettings({ tile: { ...appState.settings.tile, size: parseInt(e.target.value) } }); });
             handleChange('#tileBorderColor', e => updateSettings({ tile: { ...appState.settings.tile, borderColor: e.target.value } }));
             handleInput('#tileBorderWidth', e => { document.getElementById('tileBorderWidthValue').textContent = e.target.value; updateSettings({ tile: { ...appState.settings.tile, borderWidth: parseInt(e.target.value) } }); });
@@ -789,7 +869,6 @@
             }
         }
 
-        // ▼▼▼ ここから修正 ▼▼▼
         function setupDragAndDrop() {
             const dropzones = document.querySelectorAll('.tier-dropzone');
             dropzones.forEach(zone => {
@@ -836,7 +915,6 @@
                 zone.addEventListener('dblclick', (e) => { if (e.target === zone) { addTextTile(zone.dataset.tierId); } });
             });
         }
-        // ▲▲▲ ここまで修正 ▲▲▲
 
         // --- 状態更新ロジック ---
         function updateSettings(newSettings) { appState.settings = { ...appState.settings, ...newSettings }; renderAll(); saveStateToHistory(); }
@@ -862,7 +940,6 @@
             renderSidebar();
         }
         
-        // ▼▼▼ ここから修正 ▼▼▼
         /**
          * 複数の画像タイルを一度に追加します。
          * @param {string} tierId - タイルを追加するティアのID
@@ -884,7 +961,6 @@
                 saveStateToHistory();
             }
         }
-        // ▲▲▲ ここまで修正 ▲▲▲
         
         function addTextTile(tierId) {
             const tier = appState.tiers.find(t => t.id === tierId);
@@ -922,24 +998,65 @@
         });
 
         loadBtn.addEventListener('click', () => loadInput.click());
+        
         loadInput.addEventListener('change', (e) => {
             const file = e.target.files[0];
             if (file) {
                 const reader = new FileReader();
                 reader.onload = (readEvent) => {
                     try {
-                        const loadedState = JSON.parse(readEvent.result);
-                        if (loadedState.settings && loadedState.tiers) {
-                            appState = { ...appState, ...loadedState };
-                            renderAll();
-                            history = [];
-                            historyIndex = -1;
-                            saveStateToHistory();
-                        } else { alert(t('invalidFile')); }
-                    } catch (err) { alert(t('loadFileFailed')); console.error(err); }
+                        const loadedState = JSON.parse(readEvent.target.result);
+
+                        // --- データ検証 ---
+                        // 1. 基本的なオブジェクト構造と必須プロパティの存在を確認
+                        if (typeof loadedState !== 'object' || loadedState === null ||
+                            typeof loadedState.settings !== 'object' || !Array.isArray(loadedState.tiers)) {
+                            throw new Error("Invalid file structure.");
+                        }
+
+                        // --- 安全なデータの上書き（ホワイトリスト方式） ---
+                        const newState = {
+                            language: appState.language, // 言語設定は引き継ぐ
+                            settings: JSON.parse(JSON.stringify(initialSettings)), // まずデフォルトで初期化
+                            tiers: [],
+                            activePanel: 'settings', // パネルはデフォルトに戻す
+                            editingTierId: null,
+                            editingTileId: null,
+                            editingTileTierId: null,
+                        };
+
+                        // settingsをマージ（ネストしたオブジェクトも考慮）
+                        if (loadedState.settings) {
+                            Object.assign(newState.settings, loadedState.settings);
+                            if (loadedState.settings.tile) {
+                                Object.assign(newState.settings.tile, loadedState.settings.tile);
+                            }
+                        }
+                        
+                        // tiersを上書き
+                        newState.tiers = loadedState.tiers;
+                        
+                        // languageがあれば上書き
+                        if (loadedState.language) {
+                            newState.language = loadedState.language;
+                        }
+
+                        appState = newState;
+                        
+                        renderAll();
+                        history = [];
+                        historyIndex = -1;
+                        saveStateToHistory();
+                        showNotification(t('loadFileSuccess'));
+
+                    } catch (err) {
+                        showNotification(t('loadFileFailed'), true);
+                        console.error("Failed to load or parse project file:", err);
+                    }
                 };
                 reader.readAsText(file);
             }
+            // 次に同じファイルを選択してもイベントが発火するように値をクリア
             e.target.value = '';
         });
 
@@ -953,16 +1070,14 @@
             exportButton.textContent = '...';
             exportButton.disabled = true;
 
-            // Create a clone for capturing
             const clone = elementToCapture.cloneNode(true);
             
             const currentScale = appState.settings.displayScale ?? 1;
             clone.style.width = `${elementToCapture.clientWidth / currentScale}px`;
             
             clone.style.height = 'auto';
-            clone.style.transform = ''; // Remove scaling for capture
+            clone.style.transform = '';
 
-            // Create a temporary off-screen container for the clone
             const printContainer = document.createElement('div');
             printContainer.style.position = 'absolute';
             printContainer.style.left = '-9999px';
@@ -971,13 +1086,24 @@
             document.body.appendChild(printContainer);
 
             try {
-                await new Promise(resolve => setTimeout(resolve, 100)); // allow reflow
+                await new Promise(resolve => setTimeout(resolve, 100));
 
                 const scale = parseFloat(document.getElementById('export-scale')?.value) ?? 1;
                 const format = document.getElementById('export-format')?.value ?? 'png';
                 
+                // ▼▼▼ ここから修正 ▼▼▼
+                const bgColor = appState.settings.tableBgColor;
+                const bgOpacity = appState.settings.tableBgOpacity ?? 1.0;
+                let canvasBackgroundColor = hexToRgba(bgColor, bgOpacity);
+
+                // PNG形式で、背景の透過度が0（完全に透明）の場合、背景をnullに設定して透過させる
+                if (format === 'png' && bgOpacity === 0) {
+                    canvasBackgroundColor = null;
+                }
+                // ▲▲▲ ここまで修正 ▲▲▲
+                
                 const canvas = await html2canvas(clone, {
-                    backgroundColor: appState.settings.tableBgColor,
+                    backgroundColor: canvasBackgroundColor, // 修正した背景色を適用
                     scale: scale,
                     useCORS: true,
                     onclone: (clonedDoc) => {
@@ -993,7 +1119,7 @@
 
             } catch (err) {
                 console.error("Image export failed:", err);
-                alert(t('exportFailed'));
+                showNotification(t('exportFailed'), true);
             } finally {
                 document.body.removeChild(printContainer);
                 exportButton.textContent = originalButtonText;
