@@ -14,6 +14,9 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <!-- SortableJSライブラリ: ドラッグ＆ドロップでの並び替えを簡単に実装するために使用 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
+    <!-- ▼▼▼ ここから修正 ▼▼▼ -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet">
+    <!-- ▲▲▲ ここまで修正 ▲▲▲ -->
     <style>
         body {
             font-family: 'Roboto', 'Noto Sans JP', sans-serif;
@@ -70,7 +73,6 @@
         ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 4px; }
         ::-webkit-scrollbar-thumb:hover { background: #6b7280; }
 
-        /* --- ▼▼▼ 通知用のスタイルを追加 ▼▼▼ --- */
         #notification-area {
             position: fixed;
             top: 80px;
@@ -98,7 +100,6 @@
         }
         .notification.success { background-color: #22c55e; }
         .notification.error { background-color: #ef4444; }
-        /* --- ▲▲▲ 通知用のスタイルを追加 ▲▲▲ --- */
     </style>
 </head>
 <body class="flex flex-col h-screen">
@@ -107,6 +108,11 @@
     <header class="bg-gray-800 shadow-lg p-2 flex items-center justify-between z-20">
         <h1 id="app-title" class="text-xl font-bold text-white"></h1>
         <div class="flex items-center space-x-2">
+            <!-- ▼▼▼ ここから修正 ▼▼▼ -->
+            <button id="fullscreen-btn" class="bg-gray-600 hover:bg-gray-700 text-white p-2 rounded-lg transition-colors w-10 h-10 flex items-center justify-center">
+                <i class="fas fa-expand"></i>
+            </button>
+            <!-- ▲▲▲ ここまで修正 ▲▲▲ -->
             <button id="export-btn" class="text-white font-bold py-2 px-4 rounded-lg transition-colors"></button>
             <button id="help-btn" class="text-white font-bold py-2 px-4 rounded-lg transition-colors"></button>
             <span class="text-gray-500">|</span>
@@ -131,9 +137,7 @@
         </main>
     </div>
     
-    <!-- ▼▼▼ 通知表示エリアを追加 ▼▼▼ -->
     <div id="notification-area"></div>
-    <!-- ▲▲▲ 通知表示エリアを追加 ▲▲▲ -->
     
     <script>
         // --- 多言語対応データ ---
@@ -145,7 +149,7 @@
                 tierEditor: "の編集", tileEditor: "タイル編集", back: "戻る",
                 displayScale: "表示スケール",
                 tierListBg: "ティア表 背景色", 
-                tierListBgOpacity: "背景 透過度", // ▼▼▼ 追加 ▼▼▼
+                tierListBgOpacity: "背景 透過度",
                 tileSize: "タイルサイズ",
                 tileBorderColor: "タイル枠の色", tileBorderWidth: "タイル枠の太さ",
                 tileCornerRadius: "タイルの角丸", tierDisplaySettings: "ティア表示設定",
@@ -173,7 +177,10 @@
                 loadFileFailed: "プロジェクトファイルの読み込みに失敗しました。",
                 loadFileSuccess: "プロジェクトを読み込みました。",
                 restoreDefaults: "デフォルトに戻す",
-                exportFailed: "画像の出力に失敗しました。コンソールを確認してください。"
+                exportFailed: "画像の出力に失敗しました。コンソールを確認してください。",
+                fullscreenEnter: "全画面表示",
+                fullscreenExit: "全画面表示を解除",
+                fullscreenNotAvailable: "お使いの環境では全画面表示は利用できません"
             },
             en: {
                 appTitle: "Tier List Maker",
@@ -182,7 +189,7 @@
                 tierEditor: "Editor", tileEditor: "Tile Editor", back: "Back",
                 displayScale: "Display Scale",
                 tierListBg: "Tier List Background", 
-                tierListBgOpacity: "BG Opacity", // ▼▼▼ 追加 ▼▼▼
+                tierListBgOpacity: "BG Opacity",
                 tileSize: "Tile Size",
                 tileBorderColor: "Tile Border Color", tileBorderWidth: "Tile Border Width",
                 tileCornerRadius: "Tile Corner Radius", tierDisplaySettings: "Tier Visibility",
@@ -210,21 +217,23 @@
                 loadFileFailed: "Failed to load the project file.",
                 loadFileSuccess: "Project loaded successfully.",
                 restoreDefaults: "Restore Defaults",
-                exportFailed: "Image export failed. Check the console for details."
+                exportFailed: "Image export failed. Check the console for details.",
+                fullscreenEnter: "Enter Fullscreen",
+                fullscreenExit: "Exit Fullscreen",
+                fullscreenNotAvailable: "Fullscreen is not available in your environment"
             }
         };
 
         const initialSettings = {
             displayScale: 1.0,
             tableBgColor: '#000000',
-            tableBgOpacity: 1.0, // ▼▼▼ 追加 ▼▼▼
+            tableBgOpacity: 1.0,
             tile: { size: 64, borderColor: '#FFFFFF', borderWidth: 2, borderRadius: 8, bgColor: 'rgba(0,0,0,0)' }
         };
 
-        // --- アプリケーションの全状態を管理するオブジェクト ---
         let appState = {
             language: 'ja',
-            settings: JSON.parse(JSON.stringify(initialSettings)), // Deep copy
+            settings: JSON.parse(JSON.stringify(initialSettings)),
             tiers: [],
             activePanel: 'settings',
             editingTierId: null,
@@ -232,12 +241,10 @@
             editingTileTierId: null,
         };
 
-        // --- 履歴管理 (Undo/Redo) ---
         let history = [];
         let historyIndex = -1;
-        const MAX_HISTORY_STATES = 50; // 保存する履歴の最大数
+        const MAX_HISTORY_STATES = 50;
 
-        // --- DOM要素の参照 ---
         const appTitleEl = document.getElementById('app-title');
         const sidebar = document.getElementById('sidebar');
         const tierListContainer = document.getElementById('tier-list-container');
@@ -248,100 +255,54 @@
         const helpBtn = document.getElementById('help-btn');
         const langSwitcherBtn = document.getElementById('lang-switcher-btn');
         const notificationArea = document.getElementById('notification-area');
+        const fullscreenBtn = document.getElementById('fullscreen-btn');
+        // ▼▼▼ ここから修正 ▼▼▼
+        // const fullscreenIconExpand = document.getElementById('fullscreen-icon-expand');
+        // const fullscreenIconCollapse = document.getElementById('fullscreen-icon-collapse');
+        // ▲▲▲ ここまで修正 ▲▲▲
 
-        // --- ヘルパー関数 ---
         function t(key) {
             return translations[appState.language][key] || key;
         }
 
-        // ▼▼▼ 新しい通知表示関数 ▼▼▼
-        /**
-         * 画面上部にメッセージを表示します。
-         * @param {string} message 表示するメッセージ
-         * @param {boolean} isError エラーメッセージかどうか
-         */
         function showNotification(message, isError = false) {
             const notification = document.createElement('div');
             notification.className = `notification ${isError ? 'error' : 'success'}`;
             notification.textContent = message;
             notificationArea.appendChild(notification);
-
-            // 表示アニメーション
             setTimeout(() => {
                 notification.classList.add('show');
             }, 10);
-
-            // 3秒後に自動で消す
             setTimeout(() => {
                 notification.classList.remove('show');
-                // アニメーション終了後にDOMから削除
-                notification.addEventListener('transitionend', () => {
-                    notification.remove();
-                });
+                notification.addEventListener('transitionend', () => notification.remove());
             }, 3000);
         }
-        // ▲▲▲ 新しい通知表示関数 ▲▲▲
 
         function hexToRgba(hex, alpha) {
-            if (!hex || typeof hex !== 'string') {
-                return `rgba(0, 0, 0, ${alpha})`;
-            }
-            if (hex.startsWith('rgba')) {
-                return hex.replace(/, ?\d?\.?\d*?\)$/, `, ${alpha})`);
-            }
-            if (hex.startsWith('rgb')) {
-                return hex.replace('rgb', 'rgba').replace(')', `, ${alpha})`);
-            }
-            if (hex === 'transparent') {
-                return 'rgba(0,0,0,0)';
-            }
-            if (!hex.startsWith('#')) {
-                 return `rgba(0, 0, 0, ${alpha})`;
-            }
-
+            if (!hex || typeof hex !== 'string') return `rgba(0, 0, 0, ${alpha})`;
+            if (hex.startsWith('rgba')) return hex.replace(/, ?\d?\.?\d*?\)$/, `, ${alpha})`);
+            if (hex.startsWith('rgb')) return hex.replace('rgb', 'rgba').replace(')', `, ${alpha})`);
+            if (hex === 'transparent') return 'rgba(0,0,0,0)';
+            if (!hex.startsWith('#')) return `rgba(0, 0, 0, ${alpha})`;
             let c = hex.substring(1).split('');
-            if (c.length === 3) {
-                c = [c[0], c[0], c[1], c[1], c[2], c[2]];
-            }
+            if (c.length === 3) c = [c[0], c[0], c[1], c[1], c[2], c[2]];
             c = '0x' + c.join('');
             return `rgba(${(c >> 16) & 255}, ${(c >> 8) & 255}, ${c & 255}, ${alpha})`;
         }
 
-        // --- 履歴管理関数 ---
-        /**
-         * 現在のアプリケーションの状態を履歴に保存します。
-         */
         function saveStateToHistory() {
-            // 履歴の途中で新しい操作が行われた場合、それ以降の履歴（Redo可能な履歴）を削除
-            if (historyIndex < history.length - 1) {
-                history.splice(historyIndex + 1);
-            }
-
-            // 現在の状態をディープコピーして履歴に追加
+            if (historyIndex < history.length - 1) history.splice(historyIndex + 1);
             history.push(JSON.parse(JSON.stringify(appState)));
-
-            // 履歴が最大数を超えた場合は、最も古い履歴を削除
-            if (history.length > MAX_HISTORY_STATES) {
-                history.shift();
-            }
-
-            // インデックスを最新の状態に更新
+            if (history.length > MAX_HISTORY_STATES) history.shift();
             historyIndex = history.length - 1;
         }
 
-        /**
-         * 履歴から特定の状態を復元します。
-         * @param {object} state - 復元する状態オブジェクト
-         */
         function restoreStateFromHistory(state) {
-            // appStateを履歴の状態に完全に置き換え
-            appState = JSON.parse(JSON.stringify(state)); // 参照問題を避けるためディープコピー
-            renderAll(); // 復元した状態でUIを再描画
+            appState = JSON.parse(JSON.stringify(state));
+            renderAll();
         }
 
-        /**
-         * 一つ前の状態に戻します (Undo)。
-         */
         function undo() {
             if (historyIndex > 0) {
                 historyIndex--;
@@ -349,9 +310,6 @@
             }
         }
 
-        /**
-         * Undoした操作をやり直します (Redo)。
-         */
         function redo() {
             if (historyIndex < history.length - 1) {
                 historyIndex++;
@@ -359,8 +317,6 @@
             }
         }
 
-
-        // --- 初期化処理 ---
         function initializeApp() {
             const defaultTiers = [
                 { id: 'sss', name: 'SSS', color: 'tier-sss-bg', textColor: '#FFFFFF', textSize: 24, isVisible: true, texture: 'glow', isBold: true, isItalic: false, hasShadow: true },
@@ -379,7 +335,6 @@
             saveStateToHistory();
         }
         
-        // --- レンダリング関連 ---
         function renderAll() { 
             renderHeader();
             renderSidebar(); 
@@ -393,6 +348,10 @@
             exportBtn.textContent = t('exportImage');
             helpBtn.textContent = t('help');
             langSwitcherBtn.textContent = appState.language === 'ja' ? 'English' : '日本語';
+
+            // ▼▼▼ ここから修正 ▼▼▼
+            updateFullscreenButton();
+            // ▲▲▲ ここまで修正 ▲▲▲
 
             const activeClassMap = {
                 export: 'bg-purple-600 hover:bg-purple-700',
@@ -459,7 +418,7 @@
                 labelTextSpan.style.fontStyle = tier.isItalic ? 'italic' : 'normal';
                 labelTextSpan.style.textShadow = tier.hasShadow ? '2px 2px 5px rgba(0,0,0,0.8)' : 'none';
                 
-                labelContainer.innerHTML = ''; // 既存のコンテンツをクリア
+                labelContainer.innerHTML = '';
                 labelContainer.appendChild(labelTextSpan);
 
                 labelContainer.onclick = () => {
@@ -547,7 +506,6 @@
             return tileEl;
         }
 
-        // --- サイドバーHTML生成 ---
         function getBackButtonHTML(targetPanel = 'settings') {
             return `<button class="w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg transition-colors mb-4" onclick="switchPanel('${targetPanel}')">&larr; ${t('back')}</button>`;
         }
@@ -792,14 +750,12 @@
             return content;
         }
 
-        // --- イベントリスナー設定 ---
         function addSidebarEventListeners() {
             const handleInput = (selector, action) => { const el = document.querySelector(selector); if (el) el.addEventListener('input', action); };
             const handleChange = (selector, action) => { const el = document.querySelector(selector); if (el) el.addEventListener('change', action); };
             const handleClick = (selector, action) => { const el = document.querySelector(selector); if (el) el.addEventListener('click', action); };
             const handleKeydown = (selector, action) => { const el = document.querySelector(selector); if (el) el.addEventListener('keydown', action); };
 
-            // 全体設定
             handleInput('#displayScale', e => { 
                 document.getElementById('displayScaleValue').textContent = parseFloat(e.target.value).toFixed(2);
                 updateSettings({ displayScale: parseFloat(e.target.value) });
@@ -825,11 +781,9 @@
                 saveStateToHistory();
             });
 
-            // 画像出力
             handleInput('#export-scale', e => document.getElementById('exportScaleValue').textContent = e.target.value);
             handleClick('#execute-export-btn', executeExport);
 
-            // ティア編集
             const tier = appState.tiers.find(t => t.id === appState.editingTierId);
             if(tier) {
                 handleKeydown('#tierName', e => { if (e.key === 'Enter') { updateTier(tier.id, { name: e.target.value }); e.target.blur(); } });
@@ -842,7 +796,6 @@
                 handleChange('#tierHasShadow', e => updateTier(tier.id, { hasShadow: e.target.checked }));
             }
             
-            // タイル編集
             const editTier = appState.tiers.find(t => t.id === appState.editingTileTierId);
             if(editTier) {
                 const tile = editTier.items.find(i => i.id === appState.editingTileId);
@@ -894,16 +847,13 @@
                     if (files.length > 0) {
                         const imageFiles = Array.from(files).filter(file => file.type.startsWith('image/'));
                         if (imageFiles.length === 0) return;
-
                         const imageDataUrls = [];
                         let filesRead = 0;
-
                         imageFiles.forEach(file => {
                             const reader = new FileReader();
                             reader.onload = (readEvent) => {
                                 imageDataUrls.push(readEvent.target.result);
                                 filesRead++;
-                                
                                 if (filesRead === imageFiles.length) {
                                     addMultipleImageTiles(zone.dataset.tierId, imageDataUrls);
                                 }
@@ -916,7 +866,6 @@
             });
         }
 
-        // --- 状態更新ロジック ---
         function updateSettings(newSettings) { appState.settings = { ...appState.settings, ...newSettings }; renderAll(); saveStateToHistory(); }
         function updateTier(tierId, newProps) {
             const tier = appState.tiers.find(t => t.id === tierId);
@@ -940,11 +889,6 @@
             renderSidebar();
         }
         
-        /**
-         * 複数の画像タイルを一度に追加します。
-         * @param {string} tierId - タイルを追加するティアのID
-         * @param {string[]} imageDataUrls - 追加する画像のData URLの配列
-         */
         function addMultipleImageTiles(tierId, imageDataUrls) {
             const tier = appState.tiers.find(t => t.id === tierId);
             if (tier) {
@@ -985,7 +929,6 @@
             renderAll();
         }
 
-        // --- 機能ボタンの処理 ---
         saveBtn.addEventListener('click', () => {
             const dataStr = JSON.stringify(appState, null, 2);
             const blob = new Blob([dataStr], { type: 'application/json' });
@@ -1006,49 +949,33 @@
                 reader.onload = (readEvent) => {
                     try {
                         const loadedState = JSON.parse(readEvent.target.result);
-
-                        // --- データ検証 ---
-                        // 1. 基本的なオブジェクト構造と必須プロパティの存在を確認
                         if (typeof loadedState !== 'object' || loadedState === null ||
                             typeof loadedState.settings !== 'object' || !Array.isArray(loadedState.tiers)) {
                             throw new Error("Invalid file structure.");
                         }
-
-                        // --- 安全なデータの上書き（ホワイトリスト方式） ---
                         const newState = {
-                            language: appState.language, // 言語設定は引き継ぐ
-                            settings: JSON.parse(JSON.stringify(initialSettings)), // まずデフォルトで初期化
+                            language: appState.language,
+                            settings: JSON.parse(JSON.stringify(initialSettings)),
                             tiers: [],
-                            activePanel: 'settings', // パネルはデフォルトに戻す
+                            activePanel: 'settings',
                             editingTierId: null,
                             editingTileId: null,
                             editingTileTierId: null,
                         };
-
-                        // settingsをマージ（ネストしたオブジェクトも考慮）
                         if (loadedState.settings) {
                             Object.assign(newState.settings, loadedState.settings);
                             if (loadedState.settings.tile) {
                                 Object.assign(newState.settings.tile, loadedState.settings.tile);
                             }
                         }
-                        
-                        // tiersを上書き
                         newState.tiers = loadedState.tiers;
-                        
-                        // languageがあれば上書き
-                        if (loadedState.language) {
-                            newState.language = loadedState.language;
-                        }
-
+                        if (loadedState.language) newState.language = loadedState.language;
                         appState = newState;
-                        
                         renderAll();
                         history = [];
                         historyIndex = -1;
                         saveStateToHistory();
                         showNotification(t('loadFileSuccess'));
-
                     } catch (err) {
                         showNotification(t('loadFileFailed'), true);
                         console.error("Failed to load or parse project file:", err);
@@ -1056,67 +983,50 @@
                 };
                 reader.readAsText(file);
             }
-            // 次に同じファイルを選択してもイベントが発火するように値をクリア
             e.target.value = '';
         });
 
         async function executeExport() {
             const elementToCapture = document.getElementById('tier-list-content-wrapper');
             const exportButton = document.getElementById('execute-export-btn');
-
             if (!elementToCapture || !exportButton) return;
-
             const originalButtonText = exportButton.textContent;
             exportButton.textContent = '...';
             exportButton.disabled = true;
-
             const clone = elementToCapture.cloneNode(true);
-            
             const currentScale = appState.settings.displayScale ?? 1;
             clone.style.width = `${elementToCapture.clientWidth / currentScale}px`;
-            
             clone.style.height = 'auto';
             clone.style.transform = '';
-
             const printContainer = document.createElement('div');
             printContainer.style.position = 'absolute';
             printContainer.style.left = '-9999px';
             printContainer.style.top = '0';
             printContainer.appendChild(clone);
             document.body.appendChild(printContainer);
-
             try {
                 await new Promise(resolve => setTimeout(resolve, 100));
-
                 const scale = parseFloat(document.getElementById('export-scale')?.value) ?? 1;
                 const format = document.getElementById('export-format')?.value ?? 'png';
-                
-                // ▼▼▼ ここから修正 ▼▼▼
                 const bgColor = appState.settings.tableBgColor;
                 const bgOpacity = appState.settings.tableBgOpacity ?? 1.0;
                 let canvasBackgroundColor = hexToRgba(bgColor, bgOpacity);
-
-                // PNG形式で、背景の透過度が0（完全に透明）の場合、背景をnullに設定して透過させる
                 if (format === 'png' && bgOpacity === 0) {
                     canvasBackgroundColor = null;
                 }
-                // ▲▲▲ ここまで修正 ▲▲▲
-                
                 const canvas = await html2canvas(clone, {
-                    backgroundColor: canvasBackgroundColor, // 修正した背景色を適用
+                    backgroundColor: canvasBackgroundColor,
                     scale: scale,
                     useCORS: true,
                     onclone: (clonedDoc) => {
                         clonedDoc.querySelectorAll('.tile-delete-btn').forEach(btn => btn.style.display = 'none');
                     }
                 });
-                
                 const image = canvas.toDataURL(`image/${format}`, format === 'jpeg' ? 0.9 : 1.0);
                 const a = document.createElement('a');
                 a.href = image;
                 a.download = `tier-list-${Date.now()}.${format}`;
                 a.click();
-
             } catch (err) {
                 console.error("Image export failed:", err);
                 showNotification(t('exportFailed'), true);
@@ -1132,35 +1042,70 @@
         langSwitcherBtn.addEventListener('click', () => {
             appState.language = appState.language === 'ja' ? 'en' : 'ja';
             renderAll();
-            // 言語変更は履歴に残さない
         });
 
-        // --- Undo/Redo のショートカットキーリスナー ---
-        document.addEventListener('keydown', (e) => {
-            // テキスト入力中などはUndo/Redoを無効化
-            if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) {
+        fullscreenBtn.addEventListener('click', () => {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(err => {
+                    console.error(`Error attempting to enable full-screen mode: ${err.message} (${err.name})`);
+                });
+            } else {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                }
+            }
+        });
+
+        // ▼▼▼ ここから修正 ▼▼▼
+        document.addEventListener('fullscreenchange', updateFullscreenButton);
+
+        function updateFullscreenButton() {
+            if (!fullscreenBtn) return;
+            const icon = fullscreenBtn.querySelector('i');
+
+            if (!document.fullscreenEnabled) {
+                fullscreenBtn.disabled = true;
+                fullscreenBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                fullscreenBtn.title = t('fullscreenNotAvailable');
+                icon.classList.remove('fa-compress');
+                icon.classList.add('fa-expand');
                 return;
             }
 
-            const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
-            const ctrlKey = isMac ? e.metaKey : e.ctrlKey; // MacではCmdキー、その他ではCtrlキー
+            fullscreenBtn.disabled = false;
+            fullscreenBtn.classList.remove('opacity-50', 'cursor-not-allowed');
 
+            if (document.fullscreenElement) {
+                icon.classList.remove('fa-expand');
+                icon.classList.add('fa-compress');
+                fullscreenBtn.title = t('fullscreenExit');
+            } else {
+                icon.classList.remove('fa-compress');
+                icon.classList.add('fa-expand');
+                fullscreenBtn.title = t('fullscreenEnter');
+            }
+        }
+        // ▲▲▲ ここまで修正 ▲▲▲
+
+        document.addEventListener('keydown', (e) => {
+            if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
+            const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+            const ctrlKey = isMac ? e.metaKey : e.ctrlKey;
             if (ctrlKey && e.key.toLowerCase() === 'z') {
                 e.preventDefault();
                 if (e.shiftKey) {
-                    redo(); // Ctrl+Shift+Z
+                    redo();
                 } else {
-                    undo(); // Ctrl+Z
+                    undo();
                 }
             } else if (ctrlKey && e.key.toLowerCase() === 'y') {
                 e.preventDefault();
-                redo(); // Ctrl+Y
+                redo();
             }
         });
 
-
-        // --- アプリケーション起動 ---
         initializeApp();
     </script>
 </body>
 </html>
+
